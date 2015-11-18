@@ -1,10 +1,11 @@
 package main
 
 import (
-	"encoding/json"
-	"math"
 	"./redigo/redis"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 )
 
 const (
@@ -14,6 +15,17 @@ const (
 	Add_FOOD              = "/carts/"
 	SUBMIT_OR_QUERY_ORDER = "/orders"
 	QUERY_ALL_ORDERS      = "/admin/orders"
+)
+
+var (
+	ERROR_MSG          = []byte("{\"code\": \"MALFORMED_JSON\",\"message\": \"格式错误\"}")
+	EMPTY_MSG          = []byte("{\"code\": \"EMPTY_REQUEST\",\"message\": \"请求体为空\"}")
+	USER_AUTH_FAIL_MSG = []byte("{\"code\": \"INVALID_ACCESS_TOKEN\",\"message\": \"无效的令牌\"}")
+)
+
+// tuning parameters
+const (
+	CACHE_LEN = 70
 )
 
 var (
@@ -32,45 +44,64 @@ func InitService(addr string) {
 }
 
 func login(writer http.ResponseWriter, req *http.Request) {
-	// TODO
-	username := req.PostFormValue("username")
-	password := req.PostFormValue("password")
+	isEmpty, body := checkBodyEmpty(writer, req)
+	if isEmpty {
+		return
+	}
+	var user LoginJson
+	if err := json.Unmarshal(body, &user); err != nil {
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(ERROR_MSG)
+		return
+	}
+	username := user.Username
+	password := user.Password
 
 	rs := Pool.Get()
-	defer rs.Close()
-
-	flag, _ := rs.Do("HEXISTS", "user:"+username, "password")
+	errMsg := []byte("{\"code\":\"USER_AUTH_FAIL\",\"message\":\"用户名或密码错误\"}")
+	flag, _ := redis.Bool(rs.Do("HEXISTS", "user:"+username, "password"))
+	// fmt.Println("flag=", flag)
 	if flag == false {
-		writer.Write([]byte("{"code": "USER_AUTH_FAIL","message": "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒"}"))
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(errMsg)
 		return
 	}
 
-	pd, _ = rs.Do("HEXISTS", "user:"+username, "password")
-	if pd ! = password {
-		writer.Write([]byte("{"code":"USER_AUTH_FAIL","message":"鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒"}"))
+	pd, _ := redis.String(rs.Do("HGET", "user:"+username, "password"))
+	// fmt.Println("pd=", pd)
+	if pd != password {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(errMsg)
 		return
 	}
 
-	access_token, _ := rs.Do("HEXISTS", "user:"+username, "id")
-	writer.Write([]byte("{"code": "USER_AUTH_FAIL","message": "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒"}"))
+	token, _ := redis.String(rs.Do("HGET", "user:"+username, "id"))
+	rs.Do("SADD", "tokens", token)
+	rs.Close()
+	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + username + "\",\"access_token\":\"" + token + "\"}")
+	writer.WriteHeader(http.StatusOK)
+	writer.Write(okMsg)
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
-	MAXFOODID := 100
-	token := req.Form.Get("access_token")
 	rs := Pool.Get()
-	defer rs.Close()
+	if exist := authorize(writer, req, rs); !exist {
+		rs.Close()
+		return
+	}
 	foods := make([]Food, MAXFOODID)
-	redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(id)))
 	for i := 1; i <= MAXFOODID; i++ {
-		values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(id)))
+		values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(i)))
 		if err != nil {
 			break
 		} else {
-			foods[i] = Food{Id: i, Price: values[0], Stock: values[1]}
+			foods[i-1] = Food{Id: i, Price: values[0], Stock: values[1]}
 		}
 	}
-	writer.Write(json.Marshal(foods))
+	rs.Close()
+	body, _ := json.Marshal(foods)
+	writer.WriteHeader(http.StatusOK)
+	writer.Write(body)
 }
 
 func createCart(writer http.ResponseWriter, req *http.Request) {
@@ -106,4 +137,31 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	// TODO
 	writer.Write([]byte(QUERY_ALL_ORDERS))
+}
+
+// every action will do authorization except logining
+// return the flag that indicate whether is authroized or not
+func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) bool {
+	token := req.Header.Get("Access-Token")
+	if token == "" {
+		token = req.Form.Get("token")
+	}
+	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(USER_AUTH_FAIL_MSG)
+		fmt.Println("zheer")
+		return false
+	}
+	return true
+}
+
+func checkBodyEmpty(writer http.ResponseWriter, req *http.Request) (bool, []byte) {
+	tmp := make([]byte, CACHE_LEN)
+	if n, _ := req.Body.Read(tmp); n == 0 {
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(EMPTY_MSG)
+		return true, nil
+	} else {
+		return false, tmp[:n]
+	}
 }

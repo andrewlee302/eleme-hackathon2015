@@ -18,6 +18,8 @@ JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 
 */
 
+// go run  main.go service.go type.go
+
 package main
 
 import (
@@ -141,9 +143,9 @@ func loadUsersAndFoods() {
 			panic(err.Error())
 		}
 		//fmt.Printf("%d, %s, %s\n", id, name, password)
-		rs.Do("HSET", "food:"+strconv.Itoa(id), "stock", stock)
-		rs.Do("HSET", "food:"+strconv.Itoa(id), "price", price)
-
+		// rs.Do("HSET", "food:"+strconv.Itoa(id), "stock", stock)
+		// rs.Do("HSET", "food:"+strconv.Itoa(id), "price", price)
+		rs.Do("HMSET", "food:"+strconv.Itoa(id), "stock", stock, "price", price)
 		if id > MAXFOODID {
 			MAXFOODID = id
 		}
