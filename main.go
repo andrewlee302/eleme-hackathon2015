@@ -24,9 +24,17 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+
+	"./redigo/redis"
 
 	_ "./mysql"
 	"database/sql"
+	"time"
+)
+
+var (
+	Pool *redis.Pool
 )
 
 func main() {
@@ -40,6 +48,11 @@ func main() {
 	}
 	//addr := fmt.Sprintf("%s:%s", host, port)
 
+	REDIS_HOST := os.Getenv("REDIS_HOST")
+	REDIS_PORT := os.Getenv("REDIS_PORT")
+	redis_addr := fmt.Sprintf("%s:%s", REDIS_HOST, REDIS_PORT)
+	Pool = newPool(redis_addr, "")
+
 	loadUsersAndFoods()
 
 	//http.HandleFunc("/login", login)
@@ -47,6 +60,32 @@ func main() {
 	//http.ListenAndServe(addr, nil)
 }
 
+func newPool(server, password string) *redis.Pool {
+	return &redis.Pool{
+		MaxIdle:     1000,
+		IdleTimeout: 240 * time.Second,
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", server)
+			if err != nil {
+				return nil, err
+			}
+			//if _, err := c.Do("AUTH", password); err != nil {
+			//	c.Close()
+			//	return nil, err
+			//}
+			return c, err
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
+	}
+}
+
+/**
+ * load mysql table user, food to redis
+ * @return {[type]} [description]
+ */
 func loadUsersAndFoods() {
 
 	DB_HOST := os.Getenv("DB_HOST")
@@ -66,14 +105,9 @@ func loadUsersAndFoods() {
 	if err != nil {
 		panic(err.Error())
 	}
-	defer rows.Close()
 
-	err = db.Ping()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	fmt.Println("wulang")
+	rs := Pool.Get()
+	defer rs.Close()
 
 	var id int
 	var name string
@@ -83,9 +117,27 @@ func loadUsersAndFoods() {
 		if err != nil {
 			panic(err.Error())
 		}
-		fmt.Printf("%d, %s, %s\n", id, name, password)
+		//fmt.Printf("%d, %s, %s\n", id, name, password)
+		rs.Do("HSET", "user:"+strconv.Itoa(id), "name", name)
+		rs.Do("HSET", "user:"+strconv.Itoa(id), "password", password)
 	}
 
+	rows, err = db.Query("select * from food")
+	if err != nil {
+		panic(err.Error())
+	}
+
+	var stock, price int
+	for rows.Next() {
+		err = rows.Scan(&id, &stock, &price)
+		if err != nil {
+			panic(err.Error())
+		}
+		//fmt.Printf("%d, %s, %s\n", id, name, password)
+		rs.Do("HSET", "food:"+strconv.Itoa(id), "stock", stock)
+		rs.Do("HSET", "food:"+strconv.Itoa(id), "price", price)
+	}
+	rows.Close()
 }
 
 func login(w http.ResponseWriter, r *http.Request) {
