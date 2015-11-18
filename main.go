@@ -22,7 +22,7 @@ package main
 
 import (
 	"fmt"
-	"net/http"
+
 	"os"
 	"strconv"
 
@@ -34,7 +34,9 @@ import (
 )
 
 var (
-	Pool *redis.Pool
+	Pool      *redis.Pool
+	MAXFOODID int
+	MAXUSERID int
 )
 
 func main() {
@@ -46,7 +48,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	//addr := fmt.Sprintf("%s:%s", host, port)
+	addr := fmt.Sprintf("%s:%s", host, port)
 
 	REDIS_HOST := os.Getenv("REDIS_HOST")
 	REDIS_PORT := os.Getenv("REDIS_PORT")
@@ -55,9 +57,7 @@ func main() {
 
 	loadUsersAndFoods()
 
-	//http.HandleFunc("/login", login)
-
-	//http.ListenAndServe(addr, nil)
+	InitService(addr)
 }
 
 func newPool(server, password string) *redis.Pool {
@@ -118,8 +118,15 @@ func loadUsersAndFoods() {
 			panic(err.Error())
 		}
 		//fmt.Printf("%d, %s, %s\n", id, name, password)
-		rs.Do("HSET", "user:"+strconv.Itoa(id), "name", name)
-		rs.Do("HSET", "user:"+strconv.Itoa(id), "password", password)
+		//rs.Do("HSET", "user:"+strconv.Itoa(id), "name", name)
+		//rs.Do("HSET", "user:"+strconv.Itoa(id), "password", password)
+		rs.Do("HSET", "user:"+name, "id", id)
+		rs.Do("HSET", "user:"+name, "password", password)
+
+		if id > MAXUSERID {
+			MAXUSERID = id
+		}
+
 	}
 
 	rows, err = db.Query("select * from food")
@@ -136,12 +143,12 @@ func loadUsersAndFoods() {
 		//fmt.Printf("%d, %s, %s\n", id, name, password)
 		rs.Do("HSET", "food:"+strconv.Itoa(id), "stock", stock)
 		rs.Do("HSET", "food:"+strconv.Itoa(id), "price", price)
+
+		if id > MAXFOODID {
+			MAXFOODID = id
+		}
+
 	}
+
 	rows.Close()
-}
-
-func login(w http.ResponseWriter, r *http.Request) {
-	//username := r.PostFormValue("username")
-	//password := r.PostFormValue("password")
-
 }
