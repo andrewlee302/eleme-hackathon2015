@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"math"
 	"net/http"
 )
 
@@ -38,8 +40,21 @@ func login(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
-	// TODO
-	writer.Write([]byte(QUERY_FOOD))
+	MAXFOODID := 100
+	token := req.Form.Get("access_token")
+	rs := Pool.Get()
+	defer rs.Close()
+	foods := make([]Food, MAXFOODID)
+	redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(id)))
+	for i := 1; i <= MAXFOODID; i++ {
+		values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(id)))
+		if err != nil {
+			break
+		} else {
+			foods[i] = Food{Id: i, Price: values[0], Stock: values[1]}
+		}
+	}
+	writer.Write(json.Marshal(foods))
 }
 
 func createCart(writer http.ResponseWriter, req *http.Request) {
