@@ -1,6 +1,7 @@
 package main
 
 import (
+	"./redigo/redis"
 	"net/http"
 )
 
@@ -17,11 +18,7 @@ var (
 	server *http.ServeMux
 )
 
-func main() {
-	InitService()
-}
-
-func InitService() {
+func InitService(addr string) {
 	server = http.NewServeMux()
 	server.HandleFunc(LOGIN, login)
 	server.HandleFunc(QUERY_FOOD, queryFood)
@@ -29,12 +26,31 @@ func InitService() {
 	server.HandleFunc(Add_FOOD, addFood)
 	server.HandleFunc(SUBMIT_OR_QUERY_ORDER, orderProcess)
 	server.HandleFunc(QUERY_ALL_ORDERS, queryAllOrders)
-	http.ListenAndServe(":8080", server)
+	http.ListenAndServe(addr, server)
 }
 
 func login(writer http.ResponseWriter, req *http.Request) {
 	// TODO
-	writer.Write([]byte(LOGIN))
+	username := req.PostFormValue("username")
+	password := req.PostFormValue("password")
+
+	rs := Pool.Get()
+	defer rs.Close()
+
+	flag, _ := rs.Do("HEXISTS", "user:"+username, "password")
+	if flag == false {
+		writer.Write([]byte("{"code": "USER_AUTH_FAIL","message": "用户名或密码错误"}"))
+		return
+	}
+
+	pd, _ = rs.Do("HEXISTS", "user:"+username, "password")
+	if pd ! = password {
+		writer.Write([]byte("{"code":"USER_AUTH_FAIL","message":"用户名或密码错误"}"))
+		return
+	}
+
+	access_token, _ := rs.Do("HEXISTS", "user:"+username, "id")
+	writer.Write([]byte("{"code": "USER_AUTH_FAIL","message": "用户名或密码错误"}"))
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
