@@ -272,19 +272,37 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	//fmt.Println(token)
-	if cart_id, err := redis.String(rs.Do("GET", "order:"+token)); err != nil {
+	if cartidAndToken, err := redis.String(rs.Do("GET", "order:"+token)); err != nil {
 		rs.close()
-		writer.WriteHeader(http.StatusOK)
-		writer.Write([]byte(""))
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 	}
 
-	rs.Do("HGETALL", "cart:"+cart_id+":"+token)
-
+	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
 	rs.Close()
 
-	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cart_id) + "\"}"))
+	var cart Cart
+	itemNum := len(foodIdAndCounts)/2 - 1
+	if itemNum == 0 {
+		cart.Items = nil
+	} else {
+		cart.Id = token
+		cart.Items = make([]CartItem, itemNum)
+		cnt := 0
+		for i := 0; i < len(foodIdAndCounts); i += 2 {
+			if foodIdAndCounts[i] == 0 {
+				cart.Total = foodIdAndCounts[i+1]
+			} else {
+				cart.Items[cnt].FoodId = foodIdAndCounts[i]
+				cart.Items[cnt].Count = foodIdAndCounts[i+1]
+				cnt++
+			}
+		}
+	}
 
+	body, _ := json.Marshal(cart)
+	writer.WriteHeader(http.StatusOK)
+	writer.Write(body)
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
@@ -295,11 +313,53 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if token != "1" {
-		writer.WriteHeader(http.StatusForbidden)
-		writer.Write(USER_AUTH_FAIL_MSG)
-		fmt.Println("zheer")
-		return false, ""
+		rs.close()
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 	}
+
+	cnt := 0
+	for i := 1; i <= MAXUSERID; i++ {
+		if flag, _ := redis.String(rs.Do("EXISTS", "order:"+token)); flag {
+			cnt++
+		}
+	}
+
+	carts := make([]Cart2, cnt)
+	cnt = 0
+
+	for i := 1; i <= MAXUSERID; i++ {
+
+		if cartidAndToken, err := redis.String(rs.Do("GET", "order:"+token)); err != nil {
+			continue
+		}
+
+		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
+		itemNum := len(foodIdAndCounts)/2 - 1
+		if itemNum == 0 {
+			cart.Items = nil
+		} else {
+			carts[cnt].Id = string(i)
+			carts[cnt].UserId = i
+			carts[cnt].Items = make([]CartItem, itemNum)
+			count := 0
+			for j := 0; j < len(foodIdAndCounts); j += 2 {
+				if foodIdAndCounts[j] == 0 {
+					carts[cnt].Total = foodIdAndCounts[j+1]
+				} else {
+					carts[cnt].Items[count].FoodId = foodIdAndCounts[j]
+					carts[cnt].Items[count].Count = foodIdAndCounts[j+1]
+					count++
+				}
+			}
+			cnt++
+		}
+	}
+
+	rs.Close()
+	body, _ := json.Marshal(carts)
+	writer.WriteHeader(http.StatusOK)
+	writer.Write(body)
 
 }
 

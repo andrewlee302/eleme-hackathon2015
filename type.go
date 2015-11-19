@@ -19,8 +19,17 @@ type LoginJson struct {
 // Cart can be used as a order
 type Cart struct {
 	// if total < 0, then is a order
-	Total int        `json:"total"`
+	Id    string     `json:"id"`
 	Items []CartItem `json:"items"`
+	Total int        `json:"total"`
+}
+
+// for GET /admin/orders
+type Cart2 struct {
+	Id     string     `json:"id"`
+	UserId int        `json:"user_id"`
+	Items  []CartItem `json:"items"`
+	Total  int        `json:"total"`
 }
 
 type CartItem struct {
