@@ -18,10 +18,12 @@ type LoginJson struct {
 
 // Cart can be used as a order
 type Cart struct {
-	Items CartItem `json:"items"`
+	// if total < 0, then is a order
+	Total int        `json:"total"`
+	Items []CartItem `json:"items"`
 }
 
 type CartItem struct {
 	FoodId string `json:"food_id"`
-	Count  string `json:"count"`
+	Count  int    `json:"count"`
 }
