@@ -18,7 +18,8 @@ type LoginJson struct {
 
 // Cart can be used as a order
 type Cart struct {
-	Items CartItem `json:"items"`
+	Total int        `json:"total"`
+	Items []CartItem `json:"items"`
 }
 
 type CartItem struct {
