@@ -18,9 +18,9 @@ const (
 )
 
 var (
-	ERROR_MSG          = []byte("{\"code\": \"MALFORMED_JSON\",\"message\": \"格式错误\"}")
-	EMPTY_MSG          = []byte("{\"code\": \"EMPTY_REQUEST\",\"message\": \"请求体为空\"}")
-	USER_AUTH_FAIL_MSG = []byte("{\"code\": \"INVALID_ACCESS_TOKEN\",\"message\": \"无效的令牌\"}")
+	ERROR_MSG          = []byte("{\"code\": \"MALFORMED_JSON\",\"message\": \"鏍煎紡閿欒\"}")
+	EMPTY_MSG          = []byte("{\"code\": \"EMPTY_REQUEST\",\"message\": \"璇锋眰浣撲负绌篭"}")
+	USER_AUTH_FAIL_MSG = []byte("{\"code\": \"INVALID_ACCESS_TOKEN\",\"message\": \"鏃犳晥鐨勪护鐗孿"}")
 )
 
 // tuning parameters
@@ -58,7 +58,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	password := user.Password
 
 	rs := Pool.Get()
-	errMsg := []byte("{\"code\":\"USER_AUTH_FAIL\",\"message\":\"用户名或密码错误\"}")
+	errMsg := []byte("{\"code\":\"USER_AUTH_FAIL\",\"message\":\"鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒\"}")
 	flag, _ := redis.Bool(rs.Do("HEXISTS", "user:"+username, "password"))
 	// fmt.Println("flag=", flag)
 	if flag == false {
@@ -85,7 +85,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
 	rs := Pool.Get()
-	if exist := authorize(writer, req, rs); !exist {
+	if exist, _ := authorize(writer, req, rs); !exist {
 		rs.Close()
 		return
 	}
@@ -105,8 +105,14 @@ func queryFood(writer http.ResponseWriter, req *http.Request) {
 }
 
 func createCart(writer http.ResponseWriter, req *http.Request) {
-	// TODO
-	writer.Write([]byte(CREATE_CART))
+	rs := Pool.Get()
+	exist, token := authorize(writer, req, rs)
+	if !exist {
+		rs.Close()
+		return
+	}
+	fmt.Println(token)
+
 }
 
 func addFood(writer http.ResponseWriter, req *http.Request) {
@@ -141,18 +147,18 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
 // every action will do authorization except logining
 // return the flag that indicate whether is authroized or not
-func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) bool {
+func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bool, string) {
 	token := req.Header.Get("Access-Token")
 	if token == "" {
-		token = req.Form.Get("token")
+		token = req.Form.Get("access_token")
 	}
 	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
 		writer.WriteHeader(http.StatusForbidden)
 		writer.Write(USER_AUTH_FAIL_MSG)
 		fmt.Println("zheer")
-		return false
+		return false, ""
 	}
-	return true
+	return true, token
 }
 
 func checkBodyEmpty(writer http.ResponseWriter, req *http.Request) (bool, []byte) {
