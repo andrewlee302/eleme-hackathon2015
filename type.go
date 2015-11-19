@@ -15,3 +15,13 @@ type LoginJson struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
+
+// Cart can be used as a order
+type Cart struct {
+	Items CartItem `json:"items"`
+}
+
+type CartItem struct {
+	FoodId string `json:"food_id"`
+	Count  string `json:"count"`
+}
