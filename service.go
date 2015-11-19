@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -141,17 +142,20 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// transaction problem
-	cartStr := req.URL.Path
+	cartStr := strings.Split(req.URL.Path, "/")[2]
 	cartId, _ := strconv.Atoi(cartStr)
-	cartIdMax, err := redis.Int(rs.Do("GET", "card_id"))
-	if err != nil || cartId > cartIdMax {
+	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
+	fmt.Println("cartStr =", cartStr)
+	fmt.Println("cartIdMax =", cartIdMax)
+	fmt.Println("cartId =", cartId)
+	if err != nil || cartId > cartIdMax || cartId < 1 {
 		rs.Close()
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
 
-	cartKey := "cart:" + cartStr + string(token)
+	cartKey := "cart:" + cartStr + ":" + string(token)
 	total, err := redis.Int(rs.Do("HGET", cartKey, "total"))
 	if err != nil {
 		rs.Close()
@@ -177,6 +181,13 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// rapid test
+	if item.FoodId < 1 || item.FoodId > MAXFOODID {
+		rs.Close()
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(FOOD_NOT_FOUND_MSG)
+		return
+	}
 	if _, err := redis.Int(rs.Do("HEXISTS", item.FoodId, "price")); err != nil {
 		rs.Close()
 		writer.WriteHeader(http.StatusNotFound)
