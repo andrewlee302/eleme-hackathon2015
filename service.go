@@ -216,13 +216,42 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
-	// TODO
-	writer.Write([]byte("\nquery an order"))
+	rs := Pool.Get()
+	exist, token := authorize(writer, req, rs)
+	if !exist {
+		rs.Close()
+		return
+	}
+	//fmt.Println(token)
+	if cart_id, err := redis.String(rs.Do("GET", "order:"+token)); err != nil {
+		rs.close()
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte(""))
+	}
+
+	rs.Do("HGETALL", "cart:"+cart_id+":"+token)
+
+	rs.Close()
+
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cart_id) + "\"}"))
+
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
-	// TODO
-	writer.Write([]byte(QUERY_ALL_ORDERS))
+	rs := Pool.Get()
+	exist, token := authorize(writer, req, rs)
+	if !exist {
+		rs.Close()
+		return
+	}
+	if token != "1" {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(USER_AUTH_FAIL_MSG)
+		fmt.Println("zheer")
+		return false, ""
+	}
+
 }
 
 // every action will do authorization except logining
