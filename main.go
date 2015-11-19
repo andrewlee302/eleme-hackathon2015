@@ -33,9 +33,7 @@ import (
 )
 
 var (
-	Pool      *redis.Pool
-	MAXFOODID int
-	MAXUSERID int
+	Pool *redis.Pool
 )
 
 func main() {
@@ -94,60 +92,81 @@ func loadUsersAndFoods() {
 	DB_PASS := os.Getenv("DB_PASS")
 	mysql_addr := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", DB_USER, DB_PASS, DB_HOST, DB_PORT, DB_NAME)
 
+	rs := Pool.Get()
+	defer rs.Close()
+
 	db, err := sql.Open("mysql", mysql_addr)
 	if err != nil {
 		panic(err.Error())
 	}
 	defer db.Close()
 
-	rows, err := db.Query("select * from user")
+	rows, err := db.Query("SELECT COUNT(*) FROM food")
+	if err != nil {
+		panic(err.Error())
+	}
+	if rows.Next() {
+		rows.Scan(&FoodNum)
+	}
+	rows.Close()
+
+	rows, err = db.Query("SELECT COUNT(*) FROM user")
+	if err != nil {
+		panic(err.Error())
+	}
+	if rows.Next() {
+		rows.Scan(&UserNum)
+	}
+	rows.Close()
+	FoodList = make([]Food, FoodNum+1)
+	UserList = make([]User, UserNum+1)
+	UserMap = make(map[string]UserIdAndPass)
+
+	rows, err = db.Query("select * from user")
 	if err != nil {
 		panic(err.Error())
 	}
 
-	rs := Pool.Get()
-	defer rs.Close()
-
-	var id int
-	var name string
-	var password string
+	var userId int
+	var name, password string
+	cnt := 1
 	for rows.Next() {
-		err := rows.Scan(&id, &name, &password)
+		err := rows.Scan(&userId, &name, &password)
 		if err != nil {
 			panic(err.Error())
 		}
-		//fmt.Printf("%d, %s, %s\n", id, name, password)
-		//rs.Do("HSET", "user:"+strconv.Itoa(id), "name", name)
-		//rs.Do("HSET", "user:"+strconv.Itoa(id), "password", password)
-		rs.Do("HSET", "user:"+name, "id", id)
-		rs.Do("HSET", "user:"+name, "password", password)
-
-		if id > MAXUSERID {
-			MAXUSERID = id
+		UserList[cnt].Id = userId
+		UserList[cnt].Name = name
+		UserList[cnt].Password = password
+		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
+		cnt++
+		rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
+		if userId > MaxUserID {
+			MaxUserID = userId
 		}
 
 	}
-
+	rows.Close()
 	rows, err = db.Query("select * from food")
 	if err != nil {
 		panic(err.Error())
 	}
 
-	var stock, price int
+	var foodId, stock, price int
+	cnt = 1
 	for rows.Next() {
-		err = rows.Scan(&id, &stock, &price)
+		err = rows.Scan(&foodId, &stock, &price)
 		if err != nil {
 			panic(err.Error())
 		}
-		//fmt.Printf("%d, %s, %s\n", id, name, password)
-		// rs.Do("HSET", "food:"+strconv.Itoa(id), "stock", stock)
-		// rs.Do("HSET", "food:"+strconv.Itoa(id), "price", price)
-		rs.Do("HMSET", "food:"+strconv.Itoa(id), "stock", stock, "price", price)
-		if id > MAXFOODID {
-			MAXFOODID = id
+		FoodList[cnt].Id = foodId
+		FoodList[cnt].Price = price
+		FoodList[cnt].Stock = stock
+		cnt++
+		rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
+		if foodId > MaxFoodID {
+			MaxFoodID = foodId
 		}
-
 	}
-
 	rows.Close()
 }
