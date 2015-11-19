@@ -27,3 +27,7 @@ type CartItem struct {
 	FoodId int `json:"food_id"`
 	Count  int `json:"count"`
 }
+
+type CartIdJson struct {
+	CartId string `json:"cart_id"`
+}
