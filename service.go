@@ -117,8 +117,13 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		rs.Close()
 		return
 	}
-	fmt.Println(token)
+	//fmt.Println(token)
+	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
+	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+token, "total", 0)
+	rs.Close()
 
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cart_id) + "\"}"))
 }
 
 func addFood(writer http.ResponseWriter, req *http.Request) {
@@ -195,6 +200,7 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 
 func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	// TODO
+
 	writer.Write([]byte("\nsubmit order"))
 }
 
