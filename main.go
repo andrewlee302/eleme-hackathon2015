@@ -23,15 +23,12 @@ JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 package main
 
 import (
+	_ "./mysql"
+	"./redigo/redis"
+	"database/sql"
 	"fmt"
-
 	"os"
 	"strconv"
-
-	"./redigo/redis"
-
-	_ "./mysql"
-	"database/sql"
 	"time"
 )
 
