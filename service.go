@@ -389,13 +389,11 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
 		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
 		itemNum := len(foodIdAndCounts)/2 - 1
+		carts[cnt].Id = string(i)
+		carts[cnt].UserId = i
 		if itemNum == 0 {
-
-			carts[cnt].Items = nil
-
+			cart.Items = []CartItem{}
 		} else {
-			carts[cnt].Id = string(i)
-			carts[cnt].UserId = i
 			carts[cnt].Items = make([]CartItem, itemNum)
 			count := 0
 			for j := 0; j < len(foodIdAndCounts); j += 2 {
@@ -403,7 +401,7 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 					fid := foodIdAndCounts[j]
 					carts[cnt].Items[count].FoodId = fid
 					carts[cnt].Items[count].Count = foodIdAndCounts[j+1]
-					carts[cnt].TotalPrice += FoodList[fid].Price
+					carts[cnt].TotalPrice += FoodList[fid].Price * foodIdAndCounts[j+1]
 					count++
 				}
 			}
