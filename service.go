@@ -87,22 +87,25 @@ func login(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
+	// fmt.Println("queryFood")
 	rs := Pool.Get()
 	if exist, _ := authorize(writer, req, rs); !exist {
 		rs.Close()
 		return
 	}
-	foods := make([]Food, MaxFoodID)
-	for i := 1; i <= MaxFoodID; i++ {
-		values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(i)))
-		if err != nil {
-			break
-		} else {
-			foods[i-1] = Food{Id: i, Stock: values[0], Price: values[1]}
-		}
-	}
+	// foods := make([]Food, MaxFoodID)
+	// for i := 1; i <= MaxFoodID; i++ {
+	// 	values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(i)))
+	// 	if err != nil {
+	// 		break
+	// 	} else {
+	// 		foods[i-1] = Food{Id: i, Stock: values[0], Price: values[1]}
+	// 	}
+	// }
 	rs.Close()
-	body, _ := json.Marshal(foods)
+	// body, _ := json.Marshal(foods)
+	body, _ := json.Marshal(FoodCacheList[1:])
+
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
 }
@@ -299,6 +302,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	for i := 0; i < len(cart.Items); i++ {
 		rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
 		//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
+		FoodCacheList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
 	}
 	rs.Close()
 	writer.WriteHeader(http.StatusOK)
@@ -355,6 +359,8 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
+
+	fmt.Println("queryAllOrders")
 
 	rs := Pool.Get()
 	exist, token := authorize(writer, req, rs)

@@ -119,6 +119,7 @@ func loadUsersAndFoods() {
 	}
 	rows.Close()
 	FoodList = make([]Food, FoodNum+1)
+	FoodCacheList = make([]Food, FoodNum+1)
 	UserList = make([]User, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
 
@@ -162,6 +163,11 @@ func loadUsersAndFoods() {
 		FoodList[cnt].Id = foodId
 		FoodList[cnt].Price = price
 		FoodList[cnt].Stock = stock
+
+		FoodCacheList[cnt].Id = foodId
+		FoodCacheList[cnt].Price = price
+		FoodCacheList[cnt].Stock = stock
+
 		cnt++
 		rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
 		if foodId > MaxFoodID {
