@@ -76,6 +76,8 @@ func login(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	token := userIdAndPass.Id
+	userId, _ := strconv.Atoi(token)
+	UserList[userId].Id = -1
 	rs := Pool.Get()
 	rs.Do("SADD", "tokens", token)
 	rs.Close()
@@ -421,12 +423,26 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		req.ParseForm()
 		token = req.Form.Get("access_token")
 	}
+
+	userId, _ := strconv.Atoi(token)
+	if userId < 1 || userId > MaxUserID {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
+		return false, ""
+	}
+
+	if UserList[userId].Id == -1 {
+		return true, token
+	}
+
 	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		//fmt.Println(string(INVALID_ACCESS_TOKEN_MSG))
 		return false, ""
 	}
+
+	UserList[userId].Id = -1
+
 	return true, token
 }
 
