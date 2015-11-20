@@ -104,7 +104,7 @@ func queryFood(writer http.ResponseWriter, req *http.Request) {
 	// }
 	rs.Close()
 	// body, _ := json.Marshal(foods)
-	body, _ := json.Marshal(FoodCacheList[1:])
+	body, _ := json.Marshal(CacheFoodList[1:])
 
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
@@ -118,6 +118,8 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
+	CacheCartId = cart_id
+
 	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+token, TOTAL_NUM_FIELD, 0)
 	rs.Close()
 
@@ -141,13 +143,26 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 	// transaction problem
 	cartIdStr := strings.Split(req.URL.Path, "/")[2]
 	cartId, _ := strconv.Atoi(cartIdStr)
-	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
-	if err != nil || cartId > cartIdMax || cartId < 1 {
+
+	//  STASRT CART_NOT_FOUND_MSG
+	if cartId < 1 {
 		rs.Close()
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
+	if cartId > CacheCartId {
+		cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
+		if err != nil || cartId > cartIdMax {
+			rs.Close()
+			writer.WriteHeader(http.StatusNotFound)
+			writer.Write(CART_NOT_FOUND_MSG)
+			return
+		}
+		CacheCartId = cartIdMax
+	}
+	// END
+
 	cartKey := "cart:" + cartIdStr + ":" + string(token)
 	total, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
 	if cartExistErr != nil {
@@ -234,16 +249,29 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	//fmt.Printf("submitOrder: token=%s, cartId=%s\n", token, cartIdJson.CartId)
 
 	// transaction problem
-	// copy from the same code above
+
 	cartId, _ := strconv.Atoi(cartIdStr)
-	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
-	if err != nil || cartId > cartIdMax || cartId < 1 {
+
+	// copy from the same code above
+	//  STASRT CART_NOT_FOUND_MSG
+	if cartId < 1 {
 		rs.Close()
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
-		//fmt.Println(string(CART_NOT_FOUND_MSG))
 		return
 	}
+	if cartId > CacheCartId {
+		cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
+		if err != nil || cartId > cartIdMax {
+			rs.Close()
+			writer.WriteHeader(http.StatusNotFound)
+			writer.Write(CART_NOT_FOUND_MSG)
+			return
+		}
+		CacheCartId = cartIdMax
+	}
+	// END
+
 	cartKey := "cart:" + cartIdStr + ":" + token
 	_, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
 	if cartExistErr != nil {
@@ -302,7 +330,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	for i := 0; i < len(cart.Items); i++ {
 		rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
 		//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
-		FoodCacheList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
+		CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
 	}
 	rs.Close()
 	writer.WriteHeader(http.StatusOK)

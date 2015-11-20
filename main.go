@@ -119,7 +119,7 @@ func loadUsersAndFoods() {
 	}
 	rows.Close()
 	FoodList = make([]Food, FoodNum+1)
-	FoodCacheList = make([]Food, FoodNum+1)
+	CacheFoodList = make([]Food, FoodNum+1)
 	UserList = make([]User, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
 
@@ -164,9 +164,9 @@ func loadUsersAndFoods() {
 		FoodList[cnt].Price = price
 		FoodList[cnt].Stock = stock
 
-		FoodCacheList[cnt].Id = foodId
-		FoodCacheList[cnt].Price = price
-		FoodCacheList[cnt].Stock = stock
+		CacheFoodList[cnt].Id = foodId
+		CacheFoodList[cnt].Price = price
+		CacheFoodList[cnt].Stock = stock
 
 		cnt++
 		rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
