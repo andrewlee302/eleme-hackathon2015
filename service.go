@@ -260,9 +260,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		cart.Items = make([]CartItem, itemNum)
 		cnt := 0
 		for i := 0; i < len(foodIdAndCounts); i += 2 {
-			if foodIdAndCounts[i] == TOTAL_NUM_FIELD {
-				cart.TotalNum = foodIdAndCounts[i+1]
-			} else {
+			if foodIdAndCounts[i] != TOTAL_NUM_FIELD {
 				cart.Items[cnt].FoodId = foodIdAndCounts[i]
 				cart.Items[cnt].Count = foodIdAndCounts[i+1]
 				cnt++
@@ -326,7 +324,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
 	rs.Close()
 
-	var carts [1]CartDetail
+	var carts [1]Cart
 	cart := &carts[0]
 	itemNum := len(foodIdAndCounts)/2 - 1
 	cart.Id = token
@@ -349,7 +347,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	body, _ := json.Marshal(carts)
-	//fmt.Println(string(body))
+	fmt.Println(string(body))
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
 }
@@ -389,13 +387,11 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
 		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
 		itemNum := len(foodIdAndCounts)/2 - 1
+		carts[cnt].Id = strconv.Itoa(i)
+		carts[cnt].UserId = i
 		if itemNum == 0 {
-
-			carts[cnt].Items = nil
-
+			carts[cnt].Items = []CartItem{}
 		} else {
-			carts[cnt].Id = string(i)
-			carts[cnt].UserId = i
 			carts[cnt].Items = make([]CartItem, itemNum)
 			count := 0
 			for j := 0; j < len(foodIdAndCounts); j += 2 {
@@ -403,7 +399,7 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 					fid := foodIdAndCounts[j]
 					carts[cnt].Items[count].FoodId = fid
 					carts[cnt].Items[count].Count = foodIdAndCounts[j+1]
-					carts[cnt].TotalPrice += FoodList[fid].Price
+					carts[cnt].TotalPrice += FoodList[fid].Price * foodIdAndCounts[j+1]
 					count++
 				}
 			}
@@ -422,6 +418,7 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bool, string) {
 	token := req.Header.Get("Access-Token")
 	if token == "" {
+		req.ParseForm()
 		token = req.Form.Get("access_token")
 	}
 	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
