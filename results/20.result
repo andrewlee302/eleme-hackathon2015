@@ -1,0 +1,23 @@
+Score:                122
+Correct Rate:         100.0%
+
+Stats
+Concurrent Level:     2 x 4
+Time taken for tests: 94047.16ms
+Complete requests:    60000
+Failed requests:      0
+Complete orders:      10000
+Failed orders:        0
+Time per request:     9.24ms (mean)
+Time per order:       72.68ms (mean)
+Request per second:   727 (max) 522 (min) 633 (mean)
+Order per second:     122 (max) 87 (min) 105 (mean)
+
+Percentage of orders made within a certain time (ms)
+  50%      74
+  75%      84
+  80%      86
+  90%      94
+  95%      104
+  98%      112
+ 100%      165
