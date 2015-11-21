@@ -140,6 +140,22 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		rs.Close()
 		return
 	}
+
+	var item CartItem
+	if err := json.Unmarshal(body, &item); err != nil {
+		rs.Close()
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(MALFORMED_JSON_MSG)
+		return
+	}
+
+	if item.FoodId < 1 || item.FoodId > MaxFoodID {
+		rs.Close()
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(FOOD_NOT_FOUND_MSG)
+		return
+	}
+
 	// transaction problem
 	cartIdStr := strings.Split(req.URL.Path, "/")[2]
 	cartId, _ := strconv.Atoi(cartIdStr)
@@ -151,63 +167,51 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
-	if cartId > CacheCartId {
-		cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
-		if err != nil || cartId > cartIdMax {
-			rs.Close()
-			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(CART_NOT_FOUND_MSG)
-			return
-		}
-		CacheCartId = cartIdMax
-	}
-	// END
 
-	cartKey := "cart:" + cartIdStr + ":" + string(token)
-	total, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
-	if cartExistErr != nil {
-		rs.Close()
+	var getScript = redis.NewScript(2, `
+		local RcartId = redis.call('GET', 'cart_id')
+		if KEYS[1] > RcartId then
+			return 1
+		end
+		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
+		local Rtotal = redis.call("HGET", cartKey , 0)
+		if Rtotal == nil then
+			return 2
+		end
+		Rtotal = Rtotal + tonumber(ARGV[2])
+		if Rtotal > 3 then
+			return 3
+		end
+		redis.call("HMSET",cartKey,0,Rtotal,ARGV[1],ARGV[2])
+		return 0
+		`)
+	flag, err := redis.Int(getScript.Do(rs, cartId, token, item.FoodId, item.Count))
+	rs.Close()
+	//fmt.Println(cartIdStr + " " + token + " , " + strconv.Itoa(item.FoodId) + " " + strconv.Itoa(item.Count))
+	//fmt.Println(flag)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if flag == 1 {
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(CART_NOT_FOUND_MSG)
+		return
+	}
+	if flag == 2 {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(NOT_AUTHORIZED_CART_MSG)
 		return
 	}
-
-	var item CartItem
-	if err := json.Unmarshal(body, &item); err != nil {
-		rs.Close()
-		writer.WriteHeader(http.StatusBadRequest)
-		writer.Write(MALFORMED_JSON_MSG)
-		return
-	}
-	total += item.Count
-	if total > 3 {
-		rs.Close()
+	if flag == 3 {
 		writer.WriteHeader(http.StatusForbidden)
 		writer.Write(FOOD_OUT_OF_LIMIT_MSG)
 		return
 	}
-
-	// rapid test
-	if item.FoodId < 1 || item.FoodId > MaxFoodID {
-		rs.Close()
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write(FOOD_NOT_FOUND_MSG)
-		return
-	}
-
-	// foodCountInCart, foodErr := redis.Int(rs.Do("HGET", cartKey, item.FoodId))
-	// //fmt.Println("cartKey = ", cartKey, "item.FoodId = ", item.FoodId, "item.Count = ", item.Count, "foodCountInCart = ", foodCountInCart)
-	// if foodErr != nil {
-	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
-	// } else {
-	// 	// if item.Count+foodCount < 0, how to do?
-	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count+foodCountInCart)
-	// }
-	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
-
-	rs.Close()
 	writer.WriteHeader(http.StatusNoContent)
-	return
+
 }
 
 func orderProcess(writer http.ResponseWriter, req *http.Request) {
