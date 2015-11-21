@@ -26,6 +26,7 @@ import (
 	_ "./mysql"
 	"./redigo/redis"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -59,8 +60,8 @@ func main() {
 
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
-		MaxIdle:     1000,
-		IdleTimeout: 240 * time.Second,
+		MaxIdle:     3000,
+		IdleTimeout: 600 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
 			if err != nil {
@@ -94,6 +95,7 @@ func loadUsersAndFoods() {
 
 	rs := Pool.Get()
 	defer rs.Close()
+	rs.Do("SET", "cart_id", 0)
 
 	db, err := sql.Open("mysql", mysql_addr)
 	if err != nil {
@@ -175,4 +177,10 @@ func loadUsersAndFoods() {
 		}
 	}
 	rows.Close()
+
+	// wl, _ := json.Marshal(CacheFoodList[1:])
+	// fmt.Println(len(wl))
+	CacheFoodJson = make([]byte, 3370)
+	CacheFoodJson, _ = json.Marshal(CacheFoodList[1:])
+
 }

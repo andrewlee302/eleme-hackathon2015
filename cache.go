@@ -10,7 +10,7 @@ var (
 	MaxFoodID int
 	MaxUserID int
 
-	CacheFoodList    []Food
-	CacheCartId      int
-	CacheUserOrdered []bool
+	CacheFoodList []Food
+	CacheCartId   int
+	CacheFoodJson []byte
 )

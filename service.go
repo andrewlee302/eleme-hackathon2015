@@ -25,7 +25,7 @@ const (
 
 // tuning parameters
 const (
-	CACHE_LEN = 100
+	CACHE_LEN = 73
 )
 
 var (
@@ -104,10 +104,10 @@ func queryFood(writer http.ResponseWriter, req *http.Request) {
 	// }
 	rs.Close()
 	// body, _ := json.Marshal(foods)
-	body, _ := json.Marshal(CacheFoodList[1:])
+	//body, _ := json.Marshal(CacheFoodList[1:])
 
 	writer.WriteHeader(http.StatusOK)
-	writer.Write(body)
+	writer.Write(CacheFoodJson)
 }
 
 func createCart(writer http.ResponseWriter, req *http.Request) {
@@ -172,8 +172,6 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// TODO Trick: the request count is more than 0? Yes, we can checkout whether
-	// total is more than 3 advanced.
 	var item CartItem
 	if err := json.Unmarshal(body, &item); err != nil {
 		rs.Close()
@@ -196,21 +194,16 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(FOOD_NOT_FOUND_MSG)
 		return
 	}
-	if _, err := redis.Int(rs.Do("HEXISTS", item.FoodId, "price")); err != nil {
-		rs.Close()
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write(FOOD_NOT_FOUND_MSG)
-		return
-	}
 
-	foodCountInCart, foodErr := redis.Int(rs.Do("HGET", cartKey, item.FoodId))
-	//fmt.Println("cartKey = ", cartKey, "item.FoodId = ", item.FoodId, "item.Count = ", item.Count, "foodCountInCart = ", foodCountInCart)
-	if foodErr != nil {
-		rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
-	} else {
-		// if item.Count+foodCount < 0, how to do?
-		rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count+foodCountInCart)
-	}
+	// foodCountInCart, foodErr := redis.Int(rs.Do("HGET", cartKey, item.FoodId))
+	// //fmt.Println("cartKey = ", cartKey, "item.FoodId = ", item.FoodId, "item.Count = ", item.Count, "foodCountInCart = ", foodCountInCart)
+	// if foodErr != nil {
+	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
+	// } else {
+	// 	// if item.Count+foodCount < 0, how to do?
+	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count+foodCountInCart)
+	// }
+	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
 
 	rs.Close()
 	writer.WriteHeader(http.StatusNoContent)
@@ -330,7 +323,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	for i := 0; i < len(cart.Items); i++ {
 		rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
 		//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
-		CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
+		//CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
 	}
 	rs.Close()
 	writer.WriteHeader(http.StatusOK)
@@ -381,14 +374,14 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	body, _ := json.Marshal(carts)
-	fmt.Println(string(body))
+	// fmt.Println(string(body))
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
-	fmt.Println("queryAllOrders")
+	// fmt.Println("queryAllOrders")
 
 	rs := Pool.Get()
 	exist, token := authorize(writer, req, rs)
