@@ -97,6 +97,10 @@ func loadUsersAndFoods() {
 	defer rs.Close()
 	rs.Do("SET", "cart_id", 0)
 
+	// Load LuaScript
+	LuaAddFood.Load(rs)
+	LuaSubmitOrder.Load(rs)
+
 	db, err := sql.Open("mysql", mysql_addr)
 	if err != nil {
 		panic(err.Error())

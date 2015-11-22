@@ -168,24 +168,7 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var getScript = redis.NewScript(2, `
-		local RcartId = redis.call('GET', 'cart_id')
-		if KEYS[1] > RcartId then
-			return 1
-		end
-		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
-		local Rtotal = redis.call("HGET", cartKey , 0)
-		if Rtotal == nil then
-			return 2
-		end
-		Rtotal = Rtotal + tonumber(ARGV[2])
-		if Rtotal > 3 then
-			return 3
-		end
-		redis.call("HMSET",cartKey,0,Rtotal,ARGV[1],ARGV[2])
-		return 0
-		`)
-	flag, err := redis.Int(getScript.Do(rs, cartId, token, item.FoodId, item.Count))
+	flag, err := redis.Int(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
 	rs.Close()
 	//fmt.Println(cartIdStr + " " + token + " , " + strconv.Itoa(item.FoodId) + " " + strconv.Itoa(item.Count))
 	//fmt.Println(flag)
@@ -194,7 +177,10 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		fmt.Println(err)
 		return
 	}
-
+	if flag == 0 {
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if flag == 1 {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
@@ -210,7 +196,6 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(FOOD_OUT_OF_LIMIT_MSG)
 		return
 	}
-	writer.WriteHeader(http.StatusNoContent)
 
 }
 
@@ -257,83 +242,119 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
-	if cartId > CacheCartId {
-		cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
-		if err != nil || cartId > cartIdMax {
-			rs.Close()
-			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(CART_NOT_FOUND_MSG)
-			return
-		}
-		CacheCartId = cartIdMax
-	}
-	// END
 
-	cartKey := "cart:" + cartIdStr + ":" + token
-	_, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
-	if cartExistErr != nil {
-		rs.Close()
+	flag, err := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, token))
+	rs.Close()
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if flag == 0 {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
+		return
+	}
+
+	if flag == 1 {
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(CART_NOT_FOUND_MSG)
+		return
+	}
+	if flag == 2 {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(NOT_AUTHORIZED_CART_MSG)
-		//fmt.Println(string(NOT_AUTHORIZED_CART_MSG))
 		return
 	}
-
-	// transaction problem
-	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", cartKey))
-	var cart Cart
-	itemNum := len(foodIdAndCounts)/2 - 1
-	//fmt.Println("itemNum =", itemNum)
-	if itemNum == 0 {
-		cart.Items = []CartItem{}
-	} else {
-		cart.Items = make([]CartItem, itemNum)
-		cnt := 0
-		for i := 0; i < len(foodIdAndCounts); i += 2 {
-			if foodIdAndCounts[i] != TOTAL_NUM_FIELD {
-				cart.Items[cnt].FoodId = foodIdAndCounts[i]
-				cart.Items[cnt].Count = foodIdAndCounts[i+1]
-				cnt++
-				//fmt.Println("foodId, reqCount =", foodIdAndCounts[i], foodIdAndCounts[i+1])
-			}
-		}
+	if flag == 3 {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(FOOD_OUT_OF_STOCK_MSG)
+		return
 	}
-	for i := 0; i < len(cart.Items); i++ {
-		stock, _ := redis.Int(rs.Do("HGET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock"))
-		tmp := stock - cart.Items[i].Count
-		cart.Items[i].Count = tmp
-		//fmt.Println("stock, reqCount = ", stock, cart.Items[i].Count)
-		if tmp < 0 {
-			rs.Close()
-			writer.WriteHeader(http.StatusForbidden)
-			writer.Write(FOOD_OUT_OF_STOCK_MSG)
-			//fmt.Println(string(FOOD_OUT_OF_STOCK_MSG))
-			return
-		}
-	}
-
-	// no transaction problem
-	isSuccess, _ := redis.Int(rs.Do("SETNX", "order:"+token, cartIdStr+":"+token))
-	//fmt.Println("SETNX", "order:"+token, cartIdStr+":"+token)
-	//fmt.Println("isSuccess =", isSuccess)
-	if isSuccess == 0 {
-		rs.Close()
+	if flag == 4 {
 		writer.WriteHeader(http.StatusForbidden)
 		writer.Write(ORDER_OUT_OF_LIMIT_MSG)
-		//fmt.Println(string(ORDER_OUT_OF_LIMIT_MSG))
 		return
 	}
 
-	for i := 0; i < len(cart.Items); i++ {
-		rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
-		//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
-		//CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
-	}
-	rs.Close()
-	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("{\"id\": \"" + token + "\"}"))
-	//fmt.Println("order success")
-	return
+	// if cartId > CacheCartId {
+	// 	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
+	// 	if err != nil || cartId > cartIdMax {
+	// 		rs.Close()
+	// 		writer.WriteHeader(http.StatusNotFound)
+	// 		writer.Write(CART_NOT_FOUND_MSG)
+	// 		return
+	// 	}
+	// 	CacheCartId = cartIdMax
+	// }
+	// // END
+
+	// cartKey := "cart:" + cartIdStr + ":" + token
+	// _, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
+	// if cartExistErr != nil {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusUnauthorized)
+	// 	writer.Write(NOT_AUTHORIZED_CART_MSG)
+	// 	//fmt.Println(string(NOT_AUTHORIZED_CART_MSG))
+	// 	return
+	// }
+
+	// // transaction problem
+	// foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", cartKey))
+	// var cart Cart
+	// itemNum := len(foodIdAndCounts)/2 - 1
+	// //fmt.Println("itemNum =", itemNum)
+	// if itemNum == 0 {
+	// 	cart.Items = []CartItem{}
+	// } else {
+	// 	cart.Items = make([]CartItem, itemNum)
+	// 	cnt := 0
+	// 	for i := 0; i < len(foodIdAndCounts); i += 2 {
+	// 		if foodIdAndCounts[i] != TOTAL_NUM_FIELD {
+	// 			cart.Items[cnt].FoodId = foodIdAndCounts[i]
+	// 			cart.Items[cnt].Count = foodIdAndCounts[i+1]
+	// 			cnt++
+	// 			//fmt.Println("foodId, reqCount =", foodIdAndCounts[i], foodIdAndCounts[i+1])
+	// 		}
+	// 	}
+	// }
+	// for i := 0; i < len(cart.Items); i++ {
+	// 	stock, _ := redis.Int(rs.Do("HGET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock"))
+	// 	tmp := stock - cart.Items[i].Count
+	// 	cart.Items[i].Count = tmp
+	// 	//fmt.Println("stock, reqCount = ", stock, cart.Items[i].Count)
+	// 	if tmp < 0 {
+	// 		rs.Close()
+	// 		writer.WriteHeader(http.StatusForbidden)
+	// 		writer.Write(FOOD_OUT_OF_STOCK_MSG)
+	// 		//fmt.Println(string(FOOD_OUT_OF_STOCK_MSG))
+	// 		return
+	// 	}
+	// }
+
+	// // no transaction problem
+	// isSuccess, _ := redis.Int(rs.Do("SETNX", "order:"+token, cartIdStr+":"+token))
+	// //fmt.Println("SETNX", "order:"+token, cartIdStr+":"+token)
+	// //fmt.Println("isSuccess =", isSuccess)
+	// if isSuccess == 0 {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusForbidden)
+	// 	writer.Write(ORDER_OUT_OF_LIMIT_MSG)
+	// 	//fmt.Println(string(ORDER_OUT_OF_LIMIT_MSG))
+	// 	return
+	// }
+
+	// for i := 0; i < len(cart.Items); i++ {
+	// 	rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
+	// 	//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
+	// 	//CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
+	// }
+	// rs.Close()
+	// writer.WriteHeader(http.StatusOK)
+	// writer.Write([]byte("{\"id\": \"" + token + "\"}"))
+	// //fmt.Println("order success")
+	// return
 }
 
 func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
