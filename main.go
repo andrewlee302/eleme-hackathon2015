@@ -60,7 +60,7 @@ func main() {
 
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
-		MaxIdle:     3000,
+		MaxIdle:     9000,
 		IdleTimeout: 600 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
@@ -147,7 +147,7 @@ func loadUsersAndFoods() {
 		UserList[cnt].Password = password
 		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
 		cnt++
-		rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
+		// rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
 		if userId > MaxUserID {
 			MaxUserID = userId
 		}
