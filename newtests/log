@@ -1,0 +1,63 @@
+============================= test session starts ==============================
+platform linux2 -- Python 2.7.6, pytest-2.8.2, py-1.4.30, pluggy-0.3.1
+rootdir: /vagrant/newtests, inifile: 
+collected 1 items
+
+test_login.py F
+
+=================================== FAILURES ===================================
+______________________________ test_login_success ______________________________
+
+    def test_login_success():
+        uid = random.choice(list(user_store.keys()))
+        username, password = user_store[uid]
+    
+        data = {"username": username, "password": password}
+        res = requests.post(
+            url + "/login",
+            json=data,
+>           headers={"Content-type": "application/json"},
+        )
+
+test_login.py:22: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python2.7/dist-packages/requests/api.py:88: in post
+    return request('post', url, data=data, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+method = 'post', url = 'http://127.0.0.1:8080/login'
+kwargs = {'data': None, 'headers': {'Content-type': 'application/json'}, 'json': {'password': 'e7b134d5756a4818a948b8b330969837', 'username': 'vwawfyzq'}}
+session = <requests.sessions.Session object at 0x7f95bdd5a410>
+
+    def request(method, url, **kwargs):
+        """Constructs and sends a :class:`Request <Request>`.
+        Returns :class:`Response <Response>` object.
+    
+        :param method: method for the new :class:`Request` object.
+        :param url: URL for the new :class:`Request` object.
+        :param params: (optional) Dictionary or bytes to be sent in the query string for the :class:`Request`.
+        :param data: (optional) Dictionary, bytes, or file-like object to send in the body of the :class:`Request`.
+        :param headers: (optional) Dictionary of HTTP Headers to send with the :class:`Request`.
+        :param cookies: (optional) Dict or CookieJar object to send with the :class:`Request`.
+        :param files: (optional) Dictionary of 'name': file-like-objects (or {'name': ('filename', fileobj)}) for multipart encoding upload.
+        :param auth: (optional) Auth tuple to enable Basic/Digest/Custom HTTP Auth.
+        :param timeout: (optional) Float describing the timeout of the request.
+        :param allow_redirects: (optional) Boolean. Set to True if POST/PUT/DELETE redirect following is allowed.
+        :param proxies: (optional) Dictionary mapping protocol to the URL of the proxy.
+        :param verify: (optional) if ``True``, the SSL cert will be verified. A CA_BUNDLE path can also be provided.
+        :param stream: (optional) if ``False``, the response content will be immediately downloaded.
+        :param cert: (optional) if String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
+    
+        Usage::
+    
+          >>> import requests
+          >>> req = requests.request('GET', 'http://httpbin.org/get')
+          <Response [200]>
+        """
+    
+        session = sessions.Session()
+>       return session.request(method=method, url=url, **kwargs)
+E       TypeError: request() got an unexpected keyword argument 'json'
+
+/usr/lib/python2.7/dist-packages/requests/api.py:44: TypeError
+=========================== 1 failed in 0.02 seconds ===========================
