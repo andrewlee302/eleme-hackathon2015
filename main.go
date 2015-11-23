@@ -61,7 +61,7 @@ func main() {
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
 		MaxIdle:     9000,
-		IdleTimeout: 600 * time.Second,
+		IdleTimeout: 666 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
 			if err != nil {
