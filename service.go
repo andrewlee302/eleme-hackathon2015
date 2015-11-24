@@ -118,7 +118,9 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
-	CacheCartId = cart_id
+	if cart_id > CacheCartId {
+		CacheCartId = cart_id
+	}
 
 	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+token, TOTAL_NUM_FIELD, 0)
 	rs.Close()
@@ -168,15 +170,25 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	flag, err := redis.Int(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
+	var flag int
+	if cartId > CacheCartId {
+		flags, err := redis.Ints(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
+		if err != nil {
+			fmt.Println(err)
+		}
+		flag = flags[0]
+		CacheCartId = flags[1]
+	} else {
+		flag, _ = redis.Int(LuaAddFoodWithoutCartId.Do(rs, cartId, token, item.FoodId, item.Count))
+	}
 	rs.Close()
 	//fmt.Println(cartIdStr + " " + token + " , " + strconv.Itoa(item.FoodId) + " " + strconv.Itoa(item.Count))
 	//fmt.Println(flag)
 
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
 	if flag == 0 {
 		// fmt.Printf("Success: CartId, item.FoodId, item.Count = %d, %d, %d\n", cartId, item.FoodId, item.Count)
 		writer.WriteHeader(http.StatusNoContent)
@@ -244,16 +256,20 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	flag, err := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, token))
+	var flag int
+	if cartId > CacheCartId {
+		flags, err := redis.Ints(LuaSubmitOrder.Do(rs, cartIdStr, token))
+		if err != nil {
+			fmt.Println(err)
+		}
+		flag = flags[0]
+		CacheCartId = flags[1]
+	} else {
+		flag, _ = redis.Int(LuaSubmitOrderWithoutCartId.Do(rs, cartIdStr, token))
+	}
 	rs.Close()
 
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	if flag == 0 {
-		// fmt.Printf("Order Success: CartId = %d\n", cartId)
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
 		return
@@ -262,6 +278,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	if flag == 1 {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
+		fmt.Println("CART_NOT_FOUND_MSG")
 		return
 	}
 	if flag == 2 {

@@ -198,8 +198,11 @@ class Query(object):
     def make_order(self):
         chain = [self.login, self.get_foods, self.create_cart,
                  self.cart_add_food, self.cart_add_food]
+        i = 0
         for action in chain:
+            i+=1
             if not action():
+                print("error", i)
                 return False
 
         data = {"cart_id": self.cart_id}
