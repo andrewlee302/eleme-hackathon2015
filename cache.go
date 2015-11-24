@@ -36,6 +36,10 @@ var LuaAddFood = redis.NewScript(2, `
 			return 3 
 		end
 
+		if redis.call("GET", "order:" .. KEYS[2]) then
+			return 0
+		end
+
 		redis.call("HSET",cartKey,'0',Rtotal)
 		redis.call("HINCRBY",cartKey,ARGV[1],ARGV[2])
 		return 0`)

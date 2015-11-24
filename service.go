@@ -178,6 +178,7 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if flag == 0 {
+		// fmt.Printf("Success: CartId, item.FoodId, item.Count = %d, %d, %d\n", cartId, item.FoodId, item.Count)
 		writer.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -252,6 +253,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	if flag == 0 {
+		// fmt.Printf("Order Success: CartId = %d\n", cartId)
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
 		return
