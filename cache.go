@@ -27,7 +27,7 @@ var LuaAddFood = redis.NewScript(2, `
 
 		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
 		local Rtotal = redis.call("HGET", cartKey , '0')
-		if Rtotal == nil then
+		if not Rtotal then
 			return 2
 		end
 
@@ -48,7 +48,7 @@ var LuaSubmitOrder = redis.NewScript(2, `
 
 		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
 		local Rtotal = redis.call("HGET", cartKey , '0')
-		if Rtotal == nil then
+		if not Rtotal then
 			return 2
 		end
 
@@ -58,13 +58,12 @@ var LuaSubmitOrder = redis.NewScript(2, `
 		for i = 4, #cartItems, 2 do
 			foods[cartItems[i-1]] = redis.call("HGET", "food:" .. cartItems[i-1], "stock") - cartItems[i]
 			if foods[cartItems[i-1]] < 0 then
-				return 3 --FOOD_OUT_OF_STOCK_MSG
+				return 3
 			end
-		end	
+		end
 
-		local isSuccess = redis.call("SETNX", "order:" .. KEYS[2], KEYS[1] .. ":" .. KEYS[2] )
-		if isSuccess == 0 then
-			return 4  -- ORDER_OUT_OF_LIMIT_MSG
+		if redis.call("SETNX", "order:" .. KEYS[2], KEYS[1] .. ":" .. KEYS[2]) == 0 then
+			return 4
 		end
 
 		for field, value in pairs(foods) do

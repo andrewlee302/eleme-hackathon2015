@@ -405,9 +405,6 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
-
-	// fmt.Println("queryAllOrders")
-
 	rs := Pool.Get()
 	exist, token := authorize(writer, req, rs)
 	if !exist {
@@ -424,7 +421,7 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
 	cnt := 0
 	for i := 1; i <= MaxUserID; i++ {
-		if flag, _ := redis.Bool(rs.Do("EXISTS", "order:"+token)); flag {
+		if flag, _ := redis.Bool(rs.Do("EXISTS", "order:"+strconv.Itoa(i))); flag {
 			cnt++
 		}
 	}
@@ -434,10 +431,12 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 
 	for i := 1; i <= MaxUserID; i++ {
 
-		cartidAndToken, err := redis.String(rs.Do("GET", "order:"+token))
+		cartidAndToken, err := redis.String(rs.Do("GET", "order:"+strconv.Itoa(i)))
 		if err != nil {
 			continue
 		}
+
+		//fmt.Println(cartidAndToken)
 
 		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
 		itemNum := len(foodIdAndCounts)/2 - 1
