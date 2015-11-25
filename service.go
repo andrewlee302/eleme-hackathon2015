@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	// "time"
+	"time"
 )
 
 const (
@@ -423,7 +423,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
-	// start := time.Now()
+	start := time.Now()
 	rs := Pool.Get()
 	exist, token := authorize(writer, req, rs)
 	if !exist {
@@ -445,11 +445,19 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	cnt := 0
 
 	for i := 0; i < tot*2; i += 2 {
-
 		token := cartidAndTokens[i]
 		carId := cartidAndTokens[i+1]
+		rs.Send("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token))
+	}
+	rs.Flush()
 
-		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token)))
+	for i := 0; i < tot*2; i += 2 {
+
+		token := cartidAndTokens[i]
+		// carId := cartidAndTokens[i+1]
+		// foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token)))
+		foodIdAndCounts, _ := redis.Ints(rs.Receive())
+
 		itemNum := len(foodIdAndCounts)/2 - 1
 		carts[cnt].Id = strconv.Itoa(token)
 		carts[cnt].UserId = token
@@ -475,8 +483,8 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	body, _ := json.Marshal(carts)
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
-	// end := time.Now().Sub(start)
-	// fmt.Println(end.String())
+	end := time.Now().Sub(start)
+	fmt.Println("queryAllOrders time: ", end.String())
 }
 
 // every action will do authorization except logining
