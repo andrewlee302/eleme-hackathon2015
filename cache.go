@@ -36,7 +36,7 @@ var LuaAddFood = redis.NewScript(2, `
 			return {3,RcartId} 
 		end
 
-		if redis.call("GET", "order:" .. KEYS[2]) then
+		if redis.call("HGET", "orders" , KEYS[2]) then
 			return {0,RcartId}
 		end
 
@@ -56,7 +56,7 @@ var LuaAddFoodWithoutCartId = redis.NewScript(2, `
 			return 3 
 		end
 
-		if redis.call("GET", "order:" .. KEYS[2]) then
+		if redis.call("HGET", "orders" , KEYS[2]) then
 			return 0
 		end
 
@@ -86,7 +86,7 @@ var LuaSubmitOrder = redis.NewScript(2, `
 			end
 		end
 
-		if redis.call("SETNX", "order:" .. KEYS[2], KEYS[1] .. ":" .. KEYS[2]) == 0 then
+		if redis.call("HSETNX", "orders" , KEYS[2], KEYS[1]) == 0 then
 			return {4, RcartId}
 		end
 
@@ -113,7 +113,7 @@ var LuaSubmitOrderWithoutCartId = redis.NewScript(2, `
 			end
 		end
 
-		if redis.call("SETNX", "order:" .. KEYS[2], KEYS[1] .. ":" .. KEYS[2]) == 0 then
+		if redis.call("HSETNX", "orders" , KEYS[2], KEYS[1]) == 0 then
 			return 4
 		end
 

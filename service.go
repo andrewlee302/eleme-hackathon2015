@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	// "time"
 )
 
 const (
@@ -274,11 +275,9 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
 		return
 	}
-
 	if flag == 1 {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
-		fmt.Println("CART_NOT_FOUND_MSG")
 		return
 	}
 	if flag == 2 {
@@ -384,7 +383,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cartidAndToken, err := redis.String(rs.Do("GET", "order:"+token))
+	cartId, err := redis.String(rs.Do("HGET", "orders", token))
 	if err != nil {
 		rs.Close()
 		writer.WriteHeader(http.StatusOK)
@@ -392,7 +391,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
+	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartId+":"+token))
 	rs.Close()
 
 	var carts [1]Cart
@@ -424,6 +423,7 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
+	// start := time.Now()
 	rs := Pool.Get()
 	exist, token := authorize(writer, req, rs)
 	if !exist {
@@ -438,29 +438,21 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	tot, _ := redis.Int(rs.Do("HLEN", "orders"))
+	carts := make([]CartDetail, tot)
+	cartidAndTokens := make([]int, tot*2)
+	cartidAndTokens, _ = redis.Ints(rs.Do("HGETALL", "orders"))
 	cnt := 0
-	for i := 1; i <= MaxUserID; i++ {
-		if flag, _ := redis.Bool(rs.Do("EXISTS", "order:"+strconv.Itoa(i))); flag {
-			cnt++
-		}
-	}
 
-	carts := make([]CartDetail, cnt)
-	cnt = 0
+	for i := 0; i < tot*2; i += 2 {
 
-	for i := 1; i <= MaxUserID; i++ {
+		token := cartidAndTokens[i]
+		carId := cartidAndTokens[i+1]
 
-		cartidAndToken, err := redis.String(rs.Do("GET", "order:"+strconv.Itoa(i)))
-		if err != nil {
-			continue
-		}
-
-		//fmt.Println(cartidAndToken)
-
-		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartidAndToken))
+		foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token)))
 		itemNum := len(foodIdAndCounts)/2 - 1
-		carts[cnt].Id = strconv.Itoa(i)
-		carts[cnt].UserId = i
+		carts[cnt].Id = strconv.Itoa(token)
+		carts[cnt].UserId = token
 		if itemNum == 0 {
 			carts[cnt].Items = []CartItem{}
 		} else {
@@ -483,6 +475,8 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	body, _ := json.Marshal(carts)
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
+	// end := time.Now().Sub(start)
+	// fmt.Println(end.String())
 }
 
 // every action will do authorization except logining
