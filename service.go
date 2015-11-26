@@ -78,7 +78,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	}
 	token := userIdAndPass.Id
 	userId, _ := strconv.Atoi(token)
-	UserList[userId].Id = -1
+	CacheUserLogin[userId] = -1
 	rs := Pool.Get()
 	rs.Do("SADD", "tokens", token)
 	rs.Close()
@@ -88,24 +88,12 @@ func login(writer http.ResponseWriter, req *http.Request) {
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
-	// fmt.Println("queryFood")
 	rs := Pool.Get()
 	if exist, _ := authorize(writer, req, rs); !exist {
 		rs.Close()
 		return
 	}
-	// foods := make([]Food, MaxFoodID)
-	// for i := 1; i <= MaxFoodID; i++ {
-	// 	values, err := redis.Ints(rs.Do("HVALS", "food:"+strconv.Itoa(i)))
-	// 	if err != nil {
-	// 		break
-	// 	} else {
-	// 		foods[i-1] = Food{Id: i, Stock: values[0], Price: values[1]}
-	// 	}
-	// }
 	rs.Close()
-	// body, _ := json.Marshal(foods)
-	//body, _ := json.Marshal(CacheFoodList[1:])
 
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(CacheFoodJson)
@@ -503,7 +491,7 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		return false, ""
 	}
 
-	if UserList[userId].Id == -1 {
+	if CacheUserLogin[userId] == -1 {
 		return true, token
 	}
 
@@ -513,7 +501,7 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		return false, ""
 	}
 
-	UserList[userId].Id = -1
+	CacheUserLogin[userId] = -1
 
 	return true, token
 }

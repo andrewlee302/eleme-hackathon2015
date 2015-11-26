@@ -6,11 +6,6 @@ type Food struct {
 	Stock int `json:"stock"`
 }
 
-type User struct {
-	Id             int
-	Name, Password string
-}
-
 type LoginJson struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
