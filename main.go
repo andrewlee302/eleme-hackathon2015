@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 )
@@ -38,6 +39,13 @@ var (
 )
 
 func main() {
+	fmt.Println("NumCPU() =", runtime.NumCPU())
+	iWant := runtime.NumCPU() * 2
+	if runtime.GOMAXPROCS(iWant) < 1 {
+		fmt.Printf("Set procs %d failed\n", iWant)
+	} else {
+		fmt.Printf("Set procs %d successfully\n", iWant)
+	}
 	host := os.Getenv("APP_HOST")
 	port := os.Getenv("APP_PORT")
 	if host == "" {
