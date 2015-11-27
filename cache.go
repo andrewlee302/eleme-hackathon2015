@@ -19,30 +19,27 @@ var (
 	CacheUserLogin []int
 )
 
-var LuaAddFood = redis.NewScript(2, `
-		local RcartId = redis.call('GET', 'cart_id')
-		if KEYS[1] - RcartId > 0 then
-			return {1,RcartId}
-		end
-
-		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
-		local Rtotal = redis.call("HGET", cartKey , '0')
+var LuaAddFood = redis.NewScript(3, `
+		local Rtotal = redis.call("HGET", KEYS[3] , '0')
 		if not Rtotal then
-			return {2,RcartId}
+			if KEYS[1] - redis.call('GET', 'cart_id') > 0 then
+				return 1
+			end
+			return 2
 		end
 
 		Rtotal = Rtotal + ARGV[2]
 		if Rtotal > 3 then
-			return {3,RcartId} 
+			return 3
 		end
 
 		if redis.call("HGET", "orders" , KEYS[2]) then
-			return {0,RcartId}
+			return 0
 		end
 
-		redis.call("HSET",cartKey,'0',Rtotal)
-		redis.call("HINCRBY",cartKey,ARGV[1],ARGV[2])
-		return {0,RcartId}`)
+		redis.call("HSET",KEYS[3],'0',Rtotal)
+		redis.call("HINCRBY",KEYS[3],ARGV[1],ARGV[2])
+		return 0`)
 
 var LuaAddFoodWithoutCartId = redis.NewScript(2, `
 		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]

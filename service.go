@@ -121,7 +121,7 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 }
 
 func addFood(writer http.ResponseWriter, req *http.Request) {
-	// TODO Maybe the order in which two checking execute is important
+	// script version
 	rs := Pool.Get()
 	userExist, token := authorize(writer, req, rs)
 	if !userExist {
@@ -161,25 +161,27 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var flag int
-	if cartId > CacheCartId {
-		flags, err := redis.Ints(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
-		if err != nil {
-			fmt.Println(err)
-		}
-		flag = flags[0]
-		CacheCartId = flags[1]
-	} else {
-		flag, _ = redis.Int(LuaAddFoodWithoutCartId.Do(rs, cartId, token, item.FoodId, item.Count))
-	}
-	rs.Close()
+	// var flag int
+	// if cartId > CacheCartId {
+	// 	flags, err := redis.Ints(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 	}
+	// 	flag = flags[0]
+	// 	CacheCartId = flags[1]
+	// } else {
+	// 	flag, _ = redis.Int(LuaAddFoodWithoutCartId.Do(rs, cartId, token, item.FoodId, item.Count))
+	// }
+
 	//fmt.Println(cartIdStr + " " + token + " , " + strconv.Itoa(item.FoodId) + " " + strconv.Itoa(item.Count))
 	//fmt.Println(flag)
+	flag, err := redis.Int(LuaAddFood.Do(rs, cartId, token, "cart:"+cartIdStr+":"+token, item.FoodId, item.Count))
+	rs.Close()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	return
-	// }
 	if flag == 0 {
 		// fmt.Printf("Success: CartId, item.FoodId, item.Count = %d, %d, %d\n", cartId, item.FoodId, item.Count)
 		writer.WriteHeader(http.StatusNoContent)
@@ -200,6 +202,94 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(FOOD_OUT_OF_LIMIT_MSG)
 		return
 	}
+	//script version end
+
+	// rs := Pool.Get()
+	// userExist, token := authorize(writer, req, rs)
+	// if !userExist {
+	// 	rs.Close()
+	// 	return
+	// }
+	// isEmpty, body := checkBodyEmpty(writer, req)
+	// if isEmpty {
+	// 	rs.Close()
+	// 	return
+	// }
+	// // transaction problem
+	// cartIdStr := strings.Split(req.URL.Path, "/")[2]
+	// cartId, _ := strconv.Atoi(cartIdStr)
+
+	// //  STASRT CART_NOT_FOUND_MSG
+	// if cartId < 1 {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusNotFound)
+	// 	writer.Write(CART_NOT_FOUND_MSG)
+	// 	return
+	// }
+	// if cartId > CacheCartId {
+	// 	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
+	// 	if err != nil || cartId > cartIdMax {
+	// 		rs.Close()
+	// 		writer.WriteHeader(http.StatusNotFound)
+	// 		writer.Write(CART_NOT_FOUND_MSG)
+	// 		return
+	// 	}
+	// 	CacheCartId = cartIdMax
+	// }
+	// // END
+
+	// cartKey := "cart:" + cartIdStr + ":" + string(token)
+	// total, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
+	// if cartExistErr != nil {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusUnauthorized)
+	// 	writer.Write(NOT_AUTHORIZED_CART_MSG)
+	// 	return
+	// }
+
+	// // TODO Trick: the request count is more than 0? Yes, we can checkout whether
+	// // total is more than 3 advanced.
+	// var item CartItem
+	// if err := json.Unmarshal(body, &item); err != nil {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusBadRequest)
+	// 	writer.Write(MALFORMED_JSON_MSG)
+	// 	return
+	// }
+	// total += item.Count
+	// if total > 3 {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusForbidden)
+	// 	writer.Write(FOOD_OUT_OF_LIMIT_MSG)
+	// 	return
+	// }
+
+	// // rapid test
+	// if item.FoodId < 1 || item.FoodId > MaxFoodID {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusNotFound)
+	// 	writer.Write(FOOD_NOT_FOUND_MSG)
+	// 	return
+	// }
+
+	// if tag, _ := redis.Bool(rs.Do("HEXISTS", "orders", token)); tag {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusNoContent)
+	// 	return
+	// }
+
+	// foodCountInCart, foodErr := redis.Int(rs.Do("HGET", cartKey, item.FoodId))
+	// //fmt.Println("cartKey = ", cartKey, "item.FoodId = ", item.FoodId, "item.Count = ", item.Count, "foodCountInCart = ", foodCountInCart)
+	// if foodErr != nil {
+	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count)
+	// } else {
+	// 	// if item.Count+foodCount < 0, how to do?
+	// 	rs.Do("HMSET", cartKey, TOTAL_NUM_FIELD, total, item.FoodId, item.Count+foodCountInCart)
+	// }
+
+	// rs.Close()
+	// writer.WriteHeader(http.StatusNoContent)
+	// return
 
 }
 
@@ -212,6 +302,7 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 }
 
 func submitOrder(writer http.ResponseWriter, req *http.Request) {
+	//script version
 	rs := Pool.Get()
 	userExist, token := authorize(writer, req, rs)
 	if !userExist {
@@ -285,7 +376,42 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(ORDER_OUT_OF_LIMIT_MSG)
 		return
 	}
+	//script version end
 
+	// rs := Pool.Get()
+	// userExist, token := authorize(writer, req, rs)
+	// if !userExist {
+	// 	rs.Close()
+	// 	return
+	// }
+	// isEmpty, body := checkBodyEmpty(writer, req)
+	// if isEmpty {
+	// 	rs.Close()
+	// 	return
+	// }
+	// var cartIdJson CartIdJson
+	// if err := json.Unmarshal(body, &cartIdJson); err != nil {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusBadRequest)
+	// 	writer.Write(MALFORMED_JSON_MSG)
+	// 	return
+	// }
+	// cartIdStr := cartIdJson.CartId
+
+	// //fmt.Printf("submitOrder: token=%s, cartId=%s\n", token, cartIdJson.CartId)
+
+	// // transaction problem
+
+	// cartId, _ := strconv.Atoi(cartIdStr)
+
+	// // copy from the same code above
+	// //  STASRT CART_NOT_FOUND_MSG
+	// if cartId < 1 {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusNotFound)
+	// 	writer.Write(CART_NOT_FOUND_MSG)
+	// 	return
+	// }
 	// if cartId > CacheCartId {
 	// 	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
 	// 	if err != nil || cartId > cartIdMax {
@@ -342,7 +468,15 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	// }
 
 	// // no transaction problem
-	// isSuccess, _ := redis.Int(rs.Do("SETNX", "order:"+token, cartIdStr+":"+token))
+
+	// if tag, _ := redis.Bool(rs.Do("HEXISTS", "orders", token)); tag {
+	// 	rs.Close()
+	// 	writer.WriteHeader(http.StatusForbidden)
+	// 	writer.Write(ORDER_OUT_OF_LIMIT_MSG)
+	// 	return
+	// }
+
+	// isSuccess, _ := redis.Int(rs.Do("HSETNX", "orders", token, cartIdStr))
 	// //fmt.Println("SETNX", "order:"+token, cartIdStr+":"+token)
 	// //fmt.Println("isSuccess =", isSuccess)
 	// if isSuccess == 0 {
@@ -356,13 +490,13 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	// for i := 0; i < len(cart.Items); i++ {
 	// 	rs.Do("HSET", "food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
 	// 	//fmt.Println("food:"+strconv.Itoa(cart.Items[i].FoodId), "stock", cart.Items[i].Count)
-	// 	//CacheFoodList[cart.Items[i].FoodId].Stock = cart.Items[i].Count
 	// }
 	// rs.Close()
 	// writer.WriteHeader(http.StatusOK)
 	// writer.Write([]byte("{\"id\": \"" + token + "\"}"))
 	// //fmt.Println("order success")
 	// return
+
 }
 
 func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
