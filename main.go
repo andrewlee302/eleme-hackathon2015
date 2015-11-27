@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 )
@@ -38,6 +39,13 @@ var (
 )
 
 func main() {
+	fmt.Println("NumCPU() =", runtime.NumCPU())
+	iWant := runtime.NumCPU() * 2
+	if runtime.GOMAXPROCS(iWant) < 1 {
+		fmt.Printf("Set procs %d failed\n", iWant)
+	} else {
+		fmt.Printf("Set procs %d successfully\n", iWant)
+	}
 	host := os.Getenv("APP_HOST")
 	port := os.Getenv("APP_PORT")
 	if host == "" {
@@ -127,8 +135,11 @@ func loadUsersAndFoods() {
 	}
 	rows.Close()
 	FoodList = make([]Food, FoodNum+1)
-	CacheUserLogin = make([]int, UserNum+1)
+
+	// CacheFoodList = make([]Food, FoodNum+1)
+	// UserList = make([]User, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
+	CacheUserLogin = make([]int, UserNum+1)
 
 	rows, err = db.Query("select * from user")
 	if err != nil {
@@ -143,6 +154,11 @@ func loadUsersAndFoods() {
 		if err != nil {
 			panic(err.Error())
 		}
+
+		// UserList[cnt].Id = userId
+		// UserList[cnt].Name = name
+		// UserList[cnt].Password = password
+
 		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
 		cnt++
 		// rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
@@ -167,6 +183,11 @@ func loadUsersAndFoods() {
 		FoodList[cnt].Id = foodId
 		FoodList[cnt].Price = price
 		FoodList[cnt].Stock = stock
+
+		// CacheFoodList[cnt].Id = foodId
+		// CacheFoodList[cnt].Price = price
+		// CacheFoodList[cnt].Stock = stock
+
 		cnt++
 		// rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
 		rs.Do("HSET", "food:"+strconv.Itoa(foodId), "stock", stock)
