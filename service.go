@@ -338,17 +338,19 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var flag int
-	if cartId > CacheCartId {
-		flags, err := redis.Ints(LuaSubmitOrder.Do(rs, cartIdStr, token))
-		if err != nil {
-			fmt.Println(err)
-		}
-		flag = flags[0]
-		CacheCartId = flags[1]
-	} else {
-		flag, _ = redis.Int(LuaSubmitOrderWithoutCartId.Do(rs, cartIdStr, token))
-	}
+	// var flag int
+	// if cartId > CacheCartId {
+	// 	flags, err := redis.Ints(LuaSubmitOrder.Do(rs, cartIdStr, token))
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 	}
+	// 	flag = flags[0]
+	// 	CacheCartId = flags[1]
+	// } else {
+	// 	flag, _ = redis.Int(LuaSubmitOrderWithoutCartId.Do(rs, cartIdStr, token))
+	// }
+
+	flag, _ := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, token, "cart:"+cartIdStr+":"+token))
 	rs.Close()
 
 	if flag == 0 {

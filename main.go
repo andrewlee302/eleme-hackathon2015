@@ -108,8 +108,8 @@ func loadUsersAndFoods() {
 	// Load LuaScript
 	LuaAddFood.Load(rs)
 	LuaSubmitOrder.Load(rs)
-	LuaAddFoodWithoutCartId.Load(rs)
-	LuaSubmitOrderWithoutCartId.Load(rs)
+	// LuaAddFoodWithoutCartId.Load(rs)
+	// LuaSubmitOrderWithoutCartId.Load(rs)
 
 	db, err := sql.Open("mysql", mysql_addr)
 	if err != nil {
