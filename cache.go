@@ -6,17 +6,18 @@ import (
 
 // resident memory
 var (
-	FoodList  []Food                   // index from 1 to FoodNum
-	UserList  []User                   // index from 1 to UserNum
+	FoodList []Food // index from 1 to FoodNum
+	// UserList  []User                   // index from 1 to UserNum
 	UserMap   map[string]UserIdAndPass // map[name]password
 	FoodNum   int
 	UserNum   int
 	MaxFoodID int
 	MaxUserID int
 
-	CacheFoodList []Food
-	CacheCartId   int
-	CacheFoodJson []byte
+	// CacheFoodList []Food
+	CacheCartId    int
+	CacheFoodJson  []byte
+	CacheUserLogin []int
 )
 
 var LuaAddFood = redis.NewScript(2, `
@@ -71,8 +72,7 @@ var LuaSubmitOrder = redis.NewScript(2, `
 		end
 
 		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
-		local Rtotal = redis.call("HGET", cartKey , '0')
-		if not Rtotal then
+		if redis.call("HEXISTS", cartKey , '0') == 0 then
 			return {2, RcartId}
 		end
 
@@ -98,8 +98,7 @@ var LuaSubmitOrder = redis.NewScript(2, `
 
 var LuaSubmitOrderWithoutCartId = redis.NewScript(2, `
 		local cartKey = 'cart:' .. KEYS[1] .. ':' .. KEYS[2]
-		local Rtotal = redis.call("HGET", cartKey , '0')
-		if not Rtotal then
+		if redis.call("HEXISTS", cartKey , '0') == 0 then
 			return 2
 		end
 

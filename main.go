@@ -135,9 +135,10 @@ func loadUsersAndFoods() {
 	}
 	rows.Close()
 	FoodList = make([]Food, FoodNum+1)
-	CacheFoodList = make([]Food, FoodNum+1)
-	UserList = make([]User, UserNum+1)
+	// CacheFoodList = make([]Food, FoodNum+1)
+	// UserList = make([]User, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
+	CacheUserLogin = make([]int, UserNum+1)
 
 	rows, err = db.Query("select * from user")
 	if err != nil {
@@ -152,9 +153,9 @@ func loadUsersAndFoods() {
 		if err != nil {
 			panic(err.Error())
 		}
-		UserList[cnt].Id = userId
-		UserList[cnt].Name = name
-		UserList[cnt].Password = password
+		// UserList[cnt].Id = userId
+		// UserList[cnt].Name = name
+		// UserList[cnt].Password = password
 		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
 		cnt++
 		// rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
@@ -180,9 +181,9 @@ func loadUsersAndFoods() {
 		FoodList[cnt].Price = price
 		FoodList[cnt].Stock = stock
 
-		CacheFoodList[cnt].Id = foodId
-		CacheFoodList[cnt].Price = price
-		CacheFoodList[cnt].Stock = stock
+		// CacheFoodList[cnt].Id = foodId
+		// CacheFoodList[cnt].Price = price
+		// CacheFoodList[cnt].Stock = stock
 
 		cnt++
 		rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
@@ -195,6 +196,6 @@ func loadUsersAndFoods() {
 	// wl, _ := json.Marshal(CacheFoodList[1:])
 	// fmt.Println(len(wl))
 	CacheFoodJson = make([]byte, 3370)
-	CacheFoodJson, _ = json.Marshal(CacheFoodList[1:])
+	CacheFoodJson, _ = json.Marshal(FoodList[1:])
 
 }

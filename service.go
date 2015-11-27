@@ -78,7 +78,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	}
 	token := userIdAndPass.Id
 	userId, _ := strconv.Atoi(token)
-	UserList[userId].Id = -1
+	CacheUserLogin[userId] = -1
 	rs := Pool.Get()
 	rs.Do("SADD", "tokens", token)
 	rs.Close()
@@ -118,7 +118,9 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		rs.Close()
 		return
 	}
+
 	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
+
 	if cart_id > CacheCartId {
 		CacheCartId = cart_id
 	}
@@ -490,10 +492,10 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 // every action will do authorization except logining
 // return the flag that indicate whether is authroized or not
 func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bool, string) {
-	token := req.Header.Get("Access-Token")
+	req.ParseForm()
+	token := req.Form.Get("access_token")
 	if token == "" {
-		req.ParseForm()
-		token = req.Form.Get("access_token")
+		token = req.Header.Get("Access-Token")
 	}
 
 	userId, _ := strconv.Atoi(token)
@@ -503,7 +505,7 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		return false, ""
 	}
 
-	if UserList[userId].Id == -1 {
+	if CacheUserLogin[userId] == -1 {
 		return true, token
 	}
 
@@ -513,7 +515,7 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		return false, ""
 	}
 
-	UserList[userId].Id = -1
+	CacheUserLogin[userId] = -1
 
 	return true, token
 }
