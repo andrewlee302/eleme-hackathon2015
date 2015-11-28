@@ -161,26 +161,12 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// var flag int
-	// if cartId > CacheCartId {
-	// 	flags, err := redis.Ints(LuaAddFood.Do(rs, cartId, token, item.FoodId, item.Count))
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 	}
-	// 	flag = flags[0]
-	// 	CacheCartId = flags[1]
-	// } else {
-	// 	flag, _ = redis.Int(LuaAddFoodWithoutCartId.Do(rs, cartId, token, item.FoodId, item.Count))
-	// }
-
-	//fmt.Println(cartIdStr + " " + token + " , " + strconv.Itoa(item.FoodId) + " " + strconv.Itoa(item.Count))
-	//fmt.Println(flag)
-	flag, err := redis.Int(LuaAddFood.Do(rs, cartId, token, "cart:"+cartIdStr+":"+token, item.FoodId, item.Count))
+	flag, _ := redis.Int(LuaAddFood.Do(rs, cartId, token, "cart:"+cartIdStr+":"+token, item.FoodId, item.Count))
 	rs.Close()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
 
 	if flag == 0 {
 		// fmt.Printf("Success: CartId, item.FoodId, item.Count = %d, %d, %d\n", cartId, item.FoodId, item.Count)
