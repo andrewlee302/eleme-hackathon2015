@@ -66,4 +66,6 @@ var LuaSubmitOrder = redis.NewScript(3, `
 			return 4
 		end
 		
+		redis.call("HSET", KEYS[3] , '0' , -1)
+
 		return 0`)

@@ -106,7 +106,7 @@ func loadUsersAndFoods() {
 	rs.Do("SET", "cart_id", 0)
 
 	// Load LuaScript
-	LuaAddFood.Load(rs)
+	//LuaAddFood.Load(rs)
 	LuaSubmitOrder.Load(rs)
 	// LuaAddFoodWithoutCartId.Load(rs)
 	// LuaSubmitOrderWithoutCartId.Load(rs)
