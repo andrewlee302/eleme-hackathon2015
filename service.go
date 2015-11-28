@@ -82,7 +82,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	rs := Pool.Get()
 	rs.Do("SADD", "tokens", token)
 	rs.Close()
-	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + strconv.Itoa(userId-1) + "\"}")
+	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + strconv.Itoa(userId+1) + "\"}")
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(okMsg)
 }
@@ -108,10 +108,6 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
-
-	if cart_id > CacheCartId {
-		CacheCartId = cart_id
-	}
 
 	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+token, TOTAL_NUM_FIELD, 0)
 	rs.Close()
@@ -608,13 +604,8 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		token = req.Header.Get("Access-Token")
 	}
 
-	userId, err := strconv.Atoi(token)
-	if err != nil {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return false, ""
-	}
-	userId += 1
+	userId, _ := strconv.Atoi(token)
+	userId -= 1
 	token = strconv.Itoa(userId)
 
 	if userId < 1 || userId > MaxUserID {
