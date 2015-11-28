@@ -82,7 +82,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	rs := Pool.Get()
 	rs.Do("SADD", "tokens", token)
 	rs.Close()
-	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + token + "\"}")
+	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + strconv.Itoa(userId-1) + "\"}")
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(okMsg)
 }
@@ -608,7 +608,15 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 		token = req.Header.Get("Access-Token")
 	}
 
-	userId, _ := strconv.Atoi(token)
+	userId, err := strconv.Atoi(token)
+	if err != nil {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
+		return false, ""
+	}
+	userId += 1
+	token = strconv.Itoa(userId)
+
 	if userId < 1 || userId > MaxUserID {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
