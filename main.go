@@ -103,7 +103,6 @@ func loadUsersAndFoods() {
 
 	rs := Pool.Get()
 	defer rs.Close()
-	rs.Do("SET", "cart_id", 0)
 
 	// Load LuaScript
 	//LuaAddFood.Load(rs)
@@ -140,6 +139,8 @@ func loadUsersAndFoods() {
 	// UserList = make([]User, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
 	CacheUserLogin = make([]int, UserNum+1)
+	CartList = make([]CartWL, UserNum+1)
+	OrderList = make([]int, UserNum+1)
 
 	rows, err = db.Query("select * from user")
 	if err != nil {

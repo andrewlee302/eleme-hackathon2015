@@ -11,6 +11,12 @@ type LoginJson struct {
 	Password string `json:"password"`
 }
 
+type CartWL struct {
+	total  int
+	userId int
+	Items  []CartItem
+}
+
 // Cart can be used as a order
 type Cart struct {
 	// if total < 0, then is a order

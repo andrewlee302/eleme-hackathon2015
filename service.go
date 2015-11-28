@@ -4,7 +4,13 @@ import (
 	"./redigo/redis"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,7 +32,9 @@ const (
 
 // tuning parameters
 const (
-	CACHE_LEN = 73
+	CACHE_LEN     = 73
+	POLL_INTERVAL = 100
+	NODE_NUM      = 1
 )
 
 var (
@@ -44,9 +52,79 @@ var (
 
 var (
 	server *http.ServeMux
+
+	mode bool // true: reverse proxy, false: regular
+
+	proxies         []*httputil.ReverseProxy
+	orderedHostname []string
+	selfHostname    string
+	selfIndex       int
 )
 
+func getInternalIP() bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		// error
+		return false
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				selfHostname = ipnet.IP.String()
+				break
+			}
+		}
+	}
+	return true
+}
+
+func all2allHostname() {
+	rs := Pool.Get()
+	if ok := getInternalIP(); ok {
+		rs.Do("SADD", "hostnames", selfHostname)
+		rs.Do("INCR", "hostcount")
+		t := time.NewTicker(POLL_INTERVAL * time.Millisecond)
+		for {
+			<-t.C
+			count, _ := redis.Int(rs.Do("GET", "hostcount"))
+			if count == NODE_NUM {
+				break
+			}
+		}
+		t.Stop()
+		orderedHostname, _ = redis.Strings(rs.Do("SMEMBERS", "hostnames"))
+		rs.Close()
+		if len(orderedHostname) != NODE_NUM {
+			log.Fatalln("Unexpected exception")
+		}
+		sort.Strings(orderedHostname)
+		mode = true
+	} else {
+		// TODO
+	}
+}
+
+func InitReverseProxy() {
+	all2allHostname()
+	proxies := make([]*httputil.ReverseProxy, NODE_NUM)
+	for i := 0; i < NODE_NUM; i++ {
+		ip := orderedHostname[i]
+		if ip == selfHostname {
+			selfIndex = i
+			proxies[i] = nil
+		} else {
+			remote, _ := url.Parse("http://" + orderedHostname[i] + ":" + os.Getenv("APP_PORT"))
+			director := func(req *http.Request) {
+				req.URL.Scheme = "http"
+				req.URL.Host = remote.Host
+			}
+			proxies[i] = &httputil.ReverseProxy{Director: director}
+		}
+	}
+}
+
 func InitService(addr string) {
+	InitReverseProxy()
 	server = http.NewServeMux()
 	server.HandleFunc(LOGIN, login)
 	server.HandleFunc(QUERY_FOOD, queryFood)
@@ -79,180 +157,100 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	token := userIdAndPass.Id
 	userId, _ := strconv.Atoi(token)
 	CacheUserLogin[userId] = -1
-	rs := Pool.Get()
-	rs.Do("SADD", "tokens", token)
-	rs.Close()
 	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + strconv.Itoa(userId+1) + "\"}")
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(okMsg)
 }
 
 func queryFood(writer http.ResponseWriter, req *http.Request) {
-	rs := Pool.Get()
-	if exist, _ := authorize(writer, req, rs); !exist {
-		rs.Close()
+	if exist, _ := authorize(writer, req); !exist {
 		return
 	}
-	rs.Close()
-
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(CacheFoodJson)
 }
 
 func createCart(writer http.ResponseWriter, req *http.Request) {
-	rs := Pool.Get()
-	exist, token := authorize(writer, req, rs)
+	exist, token := authorize(writer, req)
 	if !exist {
-		rs.Close()
 		return
 	}
-
-	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
-
-	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+token, TOTAL_NUM_FIELD, 0)
-	rs.Close()
-
+	CartId += 1
+	cartId := CartId
+	CartList[cartId].userId, _ = strconv.Atoi(token)
 	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cart_id) + "\"}"))
+	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cartId) + "\"}"))
 }
 
 func addFood(writer http.ResponseWriter, req *http.Request) {
-	// script version
-	// rs := Pool.Get()
-	// userExist, token := authorize(writer, req, rs)
-	// if !userExist {
-	// 	rs.Close()
-	// 	return
-	// }
-	// isEmpty, body := checkBodyEmpty(writer, req)
-	// if isEmpty {
-	// 	rs.Close()
-	// 	return
-	// }
-
-	// var item CartItem
-	// if err := json.Unmarshal(body, &item); err != nil {
-	// 	rs.Close()
-	// 	writer.WriteHeader(http.StatusBadRequest)
-	// 	writer.Write(MALFORMED_JSON_MSG)
-	// 	return
-	// }
-
-	// if item.FoodId < 1 || item.FoodId > MaxFoodID {
-	// 	rs.Close()
-	// 	writer.WriteHeader(http.StatusNotFound)
-	// 	writer.Write(FOOD_NOT_FOUND_MSG)
-	// 	return
-	// }
-
-	// // transaction problem
-	// cartIdStr := strings.Split(req.URL.Path, "/")[2]
-	// cartId, _ := strconv.Atoi(cartIdStr)
-
-	// //  STASRT CART_NOT_FOUND_MSG
-	// if cartId < 1 {
-	// 	rs.Close()
-	// 	writer.WriteHeader(http.StatusNotFound)
-	// 	writer.Write(CART_NOT_FOUND_MSG)
-	// 	return
-	// }
-
-	// flag, _ := redis.Int(LuaAddFood.Do(rs, cartId, token, "cart:"+cartIdStr+":"+token, item.FoodId, item.Count))
-	// rs.Close()
-	// // if err != nil {
-	// // 	fmt.Println(err)
-	// // 	return
-	// // }
-
-	// if flag == 0 {
-	// 	// fmt.Printf("Success: CartId, item.FoodId, item.Count = %d, %d, %d\n", cartId, item.FoodId, item.Count)
-	// 	writer.WriteHeader(http.StatusNoContent)
-	// 	return
-	// }
-	// if flag == 1 {
-	// 	writer.WriteHeader(http.StatusNotFound)
-	// 	writer.Write(CART_NOT_FOUND_MSG)
-	// 	return
-	// }
-	// if flag == 2 {
-	// 	writer.WriteHeader(http.StatusUnauthorized)
-	// 	writer.Write(NOT_AUTHORIZED_CART_MSG)
-	// 	return
-	// }
-	// if flag == 3 {
-	// 	writer.WriteHeader(http.StatusForbidden)
-	// 	writer.Write(FOOD_OUT_OF_LIMIT_MSG)
-	// 	return
-	// }
-	//script version end
-
-	rs := Pool.Get()
-	userExist, token := authorize(writer, req, rs)
+	userExist, token := authorize(writer, req)
 	if !userExist {
-		rs.Close()
 		return
 	}
 	isEmpty, body := checkBodyEmpty(writer, req)
 	if isEmpty {
-		rs.Close()
 		return
 	}
 	// transaction problem
 	cartIdStr := strings.Split(req.URL.Path, "/")[2]
+	cartId, _ := strconv.Atoi(cartIdStr)
 
-	cartKey := "cart:" + cartIdStr + ":" + token
-	total, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
-	if cartExistErr != nil {
-		cartId, _ := strconv.Atoi(cartIdStr)
-		cart_id, _ := redis.Int(rs.Do("GET", "cart_id"))
-		if cartId < 1 || cartId > cart_id {
-			rs.Close()
-			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(CART_NOT_FOUND_MSG)
-			return
-		}
-		rs.Close()
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(NOT_AUTHORIZED_CART_MSG)
+	if cartId > CartId || cartId < 1 {
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
-	if total < 0 {
-		rs.Close()
-		writer.WriteHeader(http.StatusNoContent)
+
+	userId, _ := strconv.Atoi(token)
+	if CartList[cartId].userId != userId {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(NOT_AUTHORIZED_CART_MSG)
 		return
 	}
 
 	var item CartItem
 	if err := json.Unmarshal(body, &item); err != nil {
-		rs.Close()
 		writer.WriteHeader(http.StatusBadRequest)
 		writer.Write(MALFORMED_JSON_MSG)
 		return
 	}
 
+	total := CartList[cartId].total
+
+	//have ordered
+	if OrderList[userId] > 0 {
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	total += item.Count
 	if total > 3 {
-		rs.Close()
 		writer.WriteHeader(http.StatusForbidden)
 		writer.Write(FOOD_OUT_OF_LIMIT_MSG)
 		return
 	}
 
-	// rapid test
 	if item.FoodId < 1 || item.FoodId > MaxFoodID {
-		rs.Close()
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(FOOD_NOT_FOUND_MSG)
 		return
 	}
 
-	rs.Send("HSET", cartKey, TOTAL_NUM_FIELD, total)
-	rs.Send("HINCRBY", cartKey, item.FoodId, item.Count)
-	rs.Flush()
-	// rs.Receive()
-	// rs.Receive()
+	CartList[cartId].total = total
 
-	rs.Close()
+	tag := true
+	for i := 0; i < len(CartList[cartId].Items); i++ {
+		if CartList[cartId].Items[i].FoodId == item.FoodId {
+			CartList[cartId].Items[i].Count += item.Count
+			tag = false
+			break
+		}
+	}
+
+	if tag {
+		CartList[cartId].Items = append(CartList[cartId].Items, item)
+	}
+
 	writer.WriteHeader(http.StatusNoContent)
 	return
 
@@ -267,129 +265,80 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 }
 
 func submitOrder(writer http.ResponseWriter, req *http.Request) {
-	//script version
-	rs := Pool.Get()
-	userExist, token := authorize(writer, req, rs)
+
+	userExist, token := authorize(writer, req)
 	if !userExist {
-		rs.Close()
 		return
 	}
 	isEmpty, body := checkBodyEmpty(writer, req)
 	if isEmpty {
-		rs.Close()
 		return
 	}
+
 	var cartIdJson CartIdJson
 	if err := json.Unmarshal(body, &cartIdJson); err != nil {
-		rs.Close()
 		writer.WriteHeader(http.StatusBadRequest)
 		writer.Write(MALFORMED_JSON_MSG)
 		return
 	}
 	cartIdStr := cartIdJson.CartId
-
-	//fmt.Printf("submitOrder: token=%s, cartId=%s\n", token, cartIdJson.CartId)
-
-	// transaction problem
-
 	cartId, _ := strconv.Atoi(cartIdStr)
 
-	// copy from the same code above
-	//  STASRT CART_NOT_FOUND_MSG
-	if cartId < 1 {
-		rs.Close()
+	if cartId < 1 || cartId > CartId {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
 
-	// var flag int
-	// if cartId > CacheCartId {
-	// 	flags, err := redis.Ints(LuaSubmitOrder.Do(rs, cartIdStr, token))
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 	}
-	// 	flag = flags[0]
-	// 	CacheCartId = flags[1]
-	// } else {
-	// 	flag, _ = redis.Int(LuaSubmitOrderWithoutCartId.Do(rs, cartIdStr, token))
-	// }
-
-	flag, _ := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, token, "cart:"+cartIdStr+":"+token))
-	rs.Close()
-
-	if flag == 0 {
-		writer.WriteHeader(http.StatusOK)
-		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
-		return
-	}
-	if flag == 1 {
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write(CART_NOT_FOUND_MSG)
-		return
-	}
-	if flag == 2 {
+	userId, _ := strconv.Atoi(token)
+	if CartList[cartId].userId != userId {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(NOT_AUTHORIZED_CART_MSG)
 		return
 	}
-	if flag == 3 {
-		writer.WriteHeader(http.StatusForbidden)
-		writer.Write(FOOD_OUT_OF_STOCK_MSG)
-		return
-	}
-	if flag == 4 {
+
+	if OrderList[userId] > 0 {
 		writer.WriteHeader(http.StatusForbidden)
 		writer.Write(ORDER_OUT_OF_LIMIT_MSG)
 		return
 	}
-	//script version end
 
-	// rs := Pool.Get()
-	// userExist, token := authorize(writer, req, rs)
-	// if !userExist {
-	// 	rs.Close()
-	// 	return
-	// }
-	// isEmpty, body := checkBodyEmpty(writer, req)
-	// if isEmpty {
-	// 	rs.Close()
-	// 	return
-	// }
-	// var cartIdJson CartIdJson
-	// if err := json.Unmarshal(body, &cartIdJson); err != nil {
-	// 	rs.Close()
-	// 	writer.WriteHeader(http.StatusBadRequest)
-	// 	writer.Write(MALFORMED_JSON_MSG)
-	// 	return
-	// }
-	// cartIdStr := cartIdJson.CartId
+	//redis submitorder
+	rs := Pool.Get()
 
-	// //fmt.Printf("submitOrder: token=%s, cartId=%s\n", token, cartIdJson.CartId)
+	flag := 0
+	var err error
+	itemNum := len(CartList[cartId].Items)
 
-	// // transaction problem
+	tmp := ""
+	for i := 0; i < itemNum; i++ {
+		tmp = tmp + strconv.Itoa(CartList[cartId].Items[i].FoodId) + ":" + strconv.Itoa(CartList[cartId].Items[i].Count) + ":"
+	}
 
-	// cartId, _ := strconv.Atoi(cartIdStr)
+	if itemNum == 0 {
+		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, token, tmp, 0))
+	} else if itemNum == 1 {
+		flag, err = redis.Int(LuaSubmitOrder.Do(rs, token, tmp, 2, CartList[cartId].Items[0].FoodId, CartList[cartId].Items[0].Count))
+		if err != nil {
+			fmt.Println(err)
+		}
+	} else if itemNum == 2 {
+		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, token, tmp, 4, CartList[cartId].Items[0].FoodId, CartList[cartId].Items[0].Count, CartList[cartId].Items[1].FoodId, CartList[cartId].Items[1].Count))
+	} else {
+		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, token, tmp, 6, CartList[cartId].Items[0].FoodId, CartList[cartId].Items[0].Count, CartList[cartId].Items[1].FoodId, CartList[cartId].Items[1].Count, CartList[cartId].Items[2].FoodId, CartList[cartId].Items[2].Count))
+	}
+	rs.Close()
 
-	// // copy from the same code above
-	// //  STASRT CART_NOT_FOUND_MSG
-	// if cartId < 1 {
-	// 	rs.Close()
-	// 	writer.WriteHeader(http.StatusNotFound)
-	// 	writer.Write(CART_NOT_FOUND_MSG)
-	// 	return
-	// }
-	// if cartId > CacheCartId {
-	// 	cartIdMax, err := redis.Int(rs.Do("GET", "cart_id"))
-	// 	if err != nil || cartId > cartIdMax {
-	// 		rs.Close()
-	// 		writer.WriteHeader(http.StatusNotFound)
-	// 		writer.Write(CART_NOT_FOUND_MSG)
-	// 		return
-	// 	}
-	// 	CacheCartId = cartIdMax
-	// }
-	// // END
+	if flag == 0 {
+		OrderList[userId] = cartId
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte("{\"id\": \"" + token + "\"}"))
+		return
+	} else {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(FOOD_OUT_OF_STOCK_MSG)
+		return
+	}
 
 	// cartKey := "cart:" + cartIdStr + ":" + token
 	// _, cartExistErr := redis.Int(rs.Do("HGET", cartKey, TOTAL_NUM_FIELD))
@@ -464,47 +413,69 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	// //fmt.Println("order success")
 	// return
 
+	// var flag int
+	// if cartId > CacheCartId {
+	// 	flags, err := redis.Ints(LuaSubmitOrder.Do(rs, cartIdStr, token))
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 	}
+	// 	flag = flags[0]
+	// 	CacheCartId = flags[1]
+	// } else {
+	// 	flag, _ = redis.Int(LuaSubmitOrderWithoutCartId.Do(rs, cartIdStr, token))
+	// }
+
+	// flag, _ := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, token, "cart:"+cartIdStr+":"+token))
+	// rs.Close()
+
+	// if flag == 0 {
+	// 	writer.WriteHeader(http.StatusOK)
+	// 	writer.Write([]byte("{\"id\": \"" + token + "\"}"))
+	// 	return
+	// }
+	// if flag == 1 {
+	// 	writer.WriteHeader(http.StatusNotFound)
+	// 	writer.Write(CART_NOT_FOUND_MSG)
+	// 	return
+	// }
+	// if flag == 2 {
+	// 	writer.WriteHeader(http.StatusUnauthorized)
+	// 	writer.Write(NOT_AUTHORIZED_CART_MSG)
+	// 	return
+	// }
+	// if flag == 3 {
+	// 	writer.WriteHeader(http.StatusForbidden)
+	// 	writer.Write(FOOD_OUT_OF_STOCK_MSG)
+	// 	return
+	// }
+	// if flag == 4 {
+	// 	writer.WriteHeader(http.StatusForbidden)
+	// 	writer.Write(ORDER_OUT_OF_LIMIT_MSG)
+	// 	return
+	// }
+	// //script version end
+
 }
 
 func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
-	rs := Pool.Get()
-	exist, token := authorize(writer, req, rs)
+	exist, token := authorize(writer, req)
 	if !exist {
-		rs.Close()
 		return
 	}
 
-	cartId, err := redis.String(rs.Do("HGET", "orders", token))
-	if err != nil {
-		rs.Close()
+	userId, _ := strconv.Atoi(token)
+	cartId := OrderList[userId]
+	if cartId == 0 {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("[]"))
 		return
 	}
 
-	foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+cartId+":"+token))
-	rs.Close()
-
 	var carts [1]Cart
-	cart := &carts[0]
-	itemNum := len(foodIdAndCounts)/2 - 1
-	cart.Id = token
-	if itemNum == 0 {
-		cart.Items = []CartItem{}
-	} else {
-		cart.Items = make([]CartItem, itemNum)
-		cnt := 0
-		for i := 0; i < len(foodIdAndCounts); i += 2 {
-			if foodIdAndCounts[i] != 0 {
-				fid := foodIdAndCounts[i]
-				quantity := foodIdAndCounts[i+1]
-				cart.Items[cnt].FoodId = fid
-				cart.Items[cnt].Count = quantity
-				//fmt.Println("FoodList[fid]", fid, FoodList[fid])
-				cart.TotalPrice += quantity * FoodList[fid].Price
-				cnt++
-			}
-		}
+	carts[0].Items = CartList[cartId].Items
+	carts[0].Id = token
+	for i := 0; i < len(carts[0].Items); i++ {
+		carts[0].TotalPrice += carts[0].Items[i].Count * FoodList[carts[0].Items[i].FoodId].Price
 	}
 
 	body, _ := json.Marshal(carts)
@@ -515,62 +486,41 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 
 func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	start := time.Now()
-	rs := Pool.Get()
-	exist, token := authorize(writer, req, rs)
+
+	exist, token := authorize(writer, req)
 	if !exist {
-		rs.Close()
 		return
 	}
 
 	if token != ROOT_TOKEN {
-		rs.Close()
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 		return
 	}
 
+	rs := Pool.Get()
 	tot, _ := redis.Int(rs.Do("HLEN", "orders"))
 	carts := make([]CartDetail, tot)
-	cartidAndTokens := make([]int, tot*2)
-	cartidAndTokens, _ = redis.Ints(rs.Do("HGETALL", "orders"))
-	cnt := 0
-
-	for i := 0; i < tot*2; i += 2 {
-		token := cartidAndTokens[i]
-		carId := cartidAndTokens[i+1]
-		rs.Send("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token))
-	}
-	rs.Flush()
-
-	for i := 0; i < tot*2; i += 2 {
-
-		token := cartidAndTokens[i]
-		// carId := cartidAndTokens[i+1]
-		// foodIdAndCounts, _ := redis.Ints(rs.Do("HGETALL", "cart:"+strconv.Itoa(carId)+":"+strconv.Itoa(token)))
-		foodIdAndCounts, _ := redis.Ints(rs.Receive())
-
-		itemNum := len(foodIdAndCounts)/2 - 1
-		carts[cnt].Id = strconv.Itoa(token)
-		carts[cnt].UserId = token
-		if itemNum == 0 {
-			carts[cnt].Items = []CartItem{}
-		} else {
-			carts[cnt].Items = make([]CartItem, itemNum)
-			count := 0
-			for j := 0; j < len(foodIdAndCounts); j += 2 {
-				if foodIdAndCounts[j] != 0 {
-					fid := foodIdAndCounts[j]
-					carts[cnt].Items[count].FoodId = fid
-					carts[cnt].Items[count].Count = foodIdAndCounts[j+1]
-					carts[cnt].TotalPrice += FoodList[fid].Price * foodIdAndCounts[j+1]
-					count++
-				}
-			}
-			cnt++
-		}
-	}
-
+	orders, _ := redis.Strings(rs.Do("HGETALL", "orders"))
 	rs.Close()
+	cnt := 0
+	for i := 0; i < tot*2; i += 2 {
+		carts[cnt].Id = orders[i]
+		carts[cnt].UserId, _ = strconv.Atoi(orders[i])
+		foods := strings.Split(orders[i+1], ":")
+		carts[cnt].Items = make([]CartItem, len(foods)/2)
+
+		cntt := 0
+		for j := 0; j < len(foods)-1; j += 2 {
+			foodId, _ := strconv.Atoi(foods[j])
+			foodCount, _ := strconv.Atoi(foods[j+1])
+			carts[cnt].Items[cntt].FoodId = foodId
+			carts[cnt].Items[cntt].Count = foodCount
+			cntt++
+			carts[cnt].TotalPrice += FoodList[foodId].Price * foodCount
+		}
+		cnt++
+	}
 	body, _ := json.Marshal(carts)
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
@@ -578,9 +528,20 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	fmt.Println("queryAllOrders time: ", end.String())
 }
 
+func partitionByToken(userId int, writer http.ResponseWriter, req *http.Request) bool {
+	who := userId % NODE_NUM
+	if who == selfIndex {
+		return true
+	} else {
+		log.Println("transfer to ", who)
+		proxies[who].ServeHTTP(writer, req)
+		return false
+	}
+}
+
 // every action will do authorization except logining
 // return the flag that indicate whether is authroized or not
-func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bool, string) {
+func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
 	req.ParseForm()
 	token := req.Form.Get("access_token")
 	if token == "" {
@@ -589,27 +550,20 @@ func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bo
 
 	userId, _ := strconv.Atoi(token)
 	userId -= 1
+
+	if !partitionByToken(userId, writer, req) {
+		return false, ""
+	}
+
 	token = strconv.Itoa(userId)
 
-	if userId < 1 || userId > MaxUserID {
+	if userId < 1 || userId > MaxUserID || CacheUserLogin[userId] != -1 {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 		return false, ""
-	}
-
-	if CacheUserLogin[userId] == -1 {
+	} else {
 		return true, token
 	}
-
-	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return false, ""
-	}
-
-	CacheUserLogin[userId] = -1
-
-	return true, token
 }
 
 func checkBodyEmpty(writer http.ResponseWriter, req *http.Request) (bool, []byte) {
