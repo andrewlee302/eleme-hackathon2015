@@ -35,7 +35,7 @@ const (
 const (
 	CACHE_LEN     = 73
 	POLL_INTERVAL = 100 // ms
-	WAIT_INTERVAL = 3   // s
+	WAIT_INTERVAL = 10  // s
 )
 
 var (
