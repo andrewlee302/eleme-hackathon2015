@@ -164,6 +164,7 @@ func login(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(MALFORMED_JSON_MSG)
 		return
 	}
+
 	userIdAndPass, ok := UserMap[user.Username]
 	if !ok || userIdAndPass.Password != user.Password {
 		writer.WriteHeader(http.StatusForbidden)
@@ -570,6 +571,11 @@ func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
 
 	// partition by userId
 	// =================================
+	if userId < 1 || userId > MaxUserID {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
+		return false, ""
+	}
 	who := userId % nodeNum
 	if who != selfIndex {
 		proxies[who].ServeHTTP(writer, req)
@@ -582,7 +588,7 @@ func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
 
 	token = strconv.Itoa(userId)
 
-	if userId < 1 || userId > MaxUserID || CacheUserLogin[userId] != -1 {
+	if CacheUserLogin[userId] != -1 {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 		return false, ""
