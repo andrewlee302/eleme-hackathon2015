@@ -163,12 +163,20 @@ func register(writer http.ResponseWriter, req *http.Request) {
 }
 
 func login(writer http.ResponseWriter, req *http.Request) {
-	isEmpty, body := checkBodyEmpty(writer, req)
-	if isEmpty {
+	// START checkBodyEmpty
+	// ----------------------------------
+	var bodyLen int
+	body := make([]byte, CACHE_LEN)
+	if bodyLen, _ = req.Body.Read(body); bodyLen == 0 {
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(EMPTY_REQUEST_MSG)
 		return
 	}
+	// ----------------------------------
+	// END checkBodyEmpty
+
 	var user LoginJson
-	if err := json.Unmarshal(body, &user); err != nil {
+	if err := json.Unmarshal(body[:bodyLen], &user); err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
 		writer.Write(MALFORMED_JSON_MSG)
 		return
@@ -383,112 +391,108 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 
 func orderProcess(writer http.ResponseWriter, req *http.Request) {
 	if req.Method == "POST" {
-		submitOrder(writer, req)
+		// START authorize
+		// ----------------------------------
+		req.ParseForm()
+		tokenStr := req.Form.Get("access_token")
+		if tokenStr == "" {
+			tokenStr = req.Header.Get("Access-Token")
+		}
+		token, _ := strconv.Atoi(tokenStr)
+		authUserId := token - 1
+		// ======partition by userId===========
+		if authUserId < 1 || authUserId > MaxUserID {
+			writer.WriteHeader(http.StatusUnauthorized)
+			writer.Write(INVALID_ACCESS_TOKEN_MSG)
+			return
+		}
+		who := authUserId % nodeNum
+		if who != selfIndex {
+			proxies[who].ServeHTTP(writer, req)
+			return
+		}
+		// =================================
+		if CacheUserLogin[authUserId] != -1 {
+			writer.WriteHeader(http.StatusUnauthorized)
+			writer.Write(INVALID_ACCESS_TOKEN_MSG)
+			return
+		}
+		// ----------------------------------
+		// END authorize
+
+		// START checkBodyEmpty
+		// ----------------------------------
+		var bodyLen int
+		body := make([]byte, CACHE_LEN)
+		if bodyLen, _ = req.Body.Read(body); bodyLen == 0 {
+			writer.WriteHeader(http.StatusBadRequest)
+			writer.Write(EMPTY_REQUEST_MSG)
+			return
+		}
+		// ----------------------------------
+		// END checkBodyEmpty
+
+		var cartIdJson CartIdJson
+		if err := json.Unmarshal(body[:bodyLen], &cartIdJson); err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			writer.Write(MALFORMED_JSON_MSG)
+			return
+		}
+		cartIdStr := cartIdJson.CartId
+		cartId, _ := strconv.Atoi(cartIdStr)
+
+		if cartId < 1 {
+			writer.WriteHeader(http.StatusNotFound)
+			writer.Write(CART_NOT_FOUND_MSG)
+			return
+		}
+
+		cart := &CartList[cartId]
+		if cart.userId != authUserId {
+			writer.WriteHeader(http.StatusUnauthorized)
+			writer.Write(NOT_AUTHORIZED_CART_MSG)
+			return
+		}
+
+		if OrderList[authUserId] > 0 {
+			writer.WriteHeader(http.StatusForbidden)
+			writer.Write(ORDER_OUT_OF_LIMIT_MSG)
+			return
+		}
+
+		itemNum := len(cart.Items)
+		tmp := ""
+		for i := 0; i < itemNum; i++ {
+			if i > 0 {
+				tmp = tmp + ":"
+			}
+			tmp = tmp + strconv.Itoa(cart.Items[i].FoodId) + ":" + strconv.Itoa(cart.Items[i].Count)
+		}
+		var flag int
+		rs := Pool.Get()
+		if itemNum == 0 {
+			flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 0))
+		} else if itemNum == 1 {
+			flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 2, cart.Items[0].FoodId, cart.Items[0].Count))
+		} else if itemNum == 2 {
+			flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 4, cart.Items[0].FoodId, cart.Items[0].Count, cart.Items[1].FoodId, cart.Items[1].Count))
+		} else {
+			flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 6, cart.Items[0].FoodId, cart.Items[0].Count, cart.Items[1].FoodId, cart.Items[1].Count, cart.Items[2].FoodId, cart.Items[2].Count))
+		}
+		rs.Close()
+
+		if flag == 0 {
+			OrderList[authUserId] = cartId
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte("{\"id\": \"" + strconv.Itoa(authUserId) + "\"}"))
+			return
+		} else {
+			writer.WriteHeader(http.StatusForbidden)
+			writer.Write(FOOD_OUT_OF_STOCK_MSG)
+			return
+		}
 	} else {
 		queryOneOrder(writer, req)
-	}
-}
-
-func submitOrder(writer http.ResponseWriter, req *http.Request) {
-	// START authorize
-	// ----------------------------------
-	req.ParseForm()
-	tokenStr := req.Form.Get("access_token")
-	if tokenStr == "" {
-		tokenStr = req.Header.Get("Access-Token")
-	}
-	token, _ := strconv.Atoi(tokenStr)
-	authUserId := token - 1
-	// ======partition by userId===========
-	if authUserId < 1 || authUserId > MaxUserID {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return
-	}
-	who := authUserId % nodeNum
-	if who != selfIndex {
-		proxies[who].ServeHTTP(writer, req)
-		return
-	}
-	// =================================
-	if CacheUserLogin[authUserId] != -1 {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return
-	}
-	// ----------------------------------
-	// END authorize
-
-	// START checkBodyEmpty
-	// ----------------------------------
-	var bodyLen int
-	body := make([]byte, CACHE_LEN)
-	if bodyLen, _ = req.Body.Read(body); bodyLen == 0 {
-		writer.WriteHeader(http.StatusBadRequest)
-		writer.Write(EMPTY_REQUEST_MSG)
-		return
-	}
-	// ----------------------------------
-	// END checkBodyEmpty
-
-	var cartIdJson CartIdJson
-	if err := json.Unmarshal(body[:bodyLen], &cartIdJson); err != nil {
-		writer.WriteHeader(http.StatusBadRequest)
-		writer.Write(MALFORMED_JSON_MSG)
-		return
-	}
-	cartIdStr := cartIdJson.CartId
-	cartId, _ := strconv.Atoi(cartIdStr)
-
-	if cartId < 1 {
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write(CART_NOT_FOUND_MSG)
-		return
-	}
-
-	cart := &CartList[cartId]
-	if cart.userId != authUserId {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(NOT_AUTHORIZED_CART_MSG)
-		return
-	}
-
-	if OrderList[authUserId] > 0 {
-		writer.WriteHeader(http.StatusForbidden)
-		writer.Write(ORDER_OUT_OF_LIMIT_MSG)
-		return
-	}
-
-	itemNum := len(cart.Items)
-	tmp := ""
-	for i := 0; i < itemNum; i++ {
-		if i > 0 {
-			tmp = tmp + ":"
-		}
-		tmp = tmp + strconv.Itoa(cart.Items[i].FoodId) + ":" + strconv.Itoa(cart.Items[i].Count)
-	}
-	var flag int
-	rs := Pool.Get()
-	if itemNum == 0 {
-		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 0))
-	} else if itemNum == 1 {
-		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 2, cart.Items[0].FoodId, cart.Items[0].Count))
-	} else if itemNum == 2 {
-		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 4, cart.Items[0].FoodId, cart.Items[0].Count, cart.Items[1].FoodId, cart.Items[1].Count))
-	} else {
-		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, authUserId, tmp, 6, cart.Items[0].FoodId, cart.Items[0].Count, cart.Items[1].FoodId, cart.Items[1].Count, cart.Items[2].FoodId, cart.Items[2].Count))
-	}
-	rs.Close()
-
-	if flag == 0 {
-		OrderList[authUserId] = cartId
-		writer.WriteHeader(http.StatusOK)
-		writer.Write([]byte("{\"id\": \"" + strconv.Itoa(authUserId) + "\"}"))
-		return
-	} else {
-		writer.WriteHeader(http.StatusForbidden)
-		writer.Write(FOOD_OUT_OF_STOCK_MSG)
-		return
 	}
 }
 
@@ -605,58 +609,4 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	writer.Write(body)
 	end := time.Now().Sub(start)
 	fmt.Println("queryAllOrders time: ", end.String())
-}
-
-// every action will do authorization except logining
-// return the flag that indicate whether is authroized or not
-func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
-	// START authorize
-	// ----------------------------------
-	req.ParseForm()
-	token := req.Form.Get("access_token")
-	if token == "" {
-		token = req.Header.Get("Access-Token")
-	}
-
-	userId, _ := strconv.Atoi(token)
-	userId -= 1
-
-	// partition by userId
-	// =================================
-	if userId < 1 || userId > MaxUserID {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return false, ""
-	}
-	who := userId % nodeNum
-	if who != selfIndex {
-		proxies[who].ServeHTTP(writer, req)
-		return false, ""
-	}
-	// =================================
-
-	if CacheUserLogin[userId] != -1 {
-		writer.WriteHeader(http.StatusUnauthorized)
-		writer.Write(INVALID_ACCESS_TOKEN_MSG)
-		return false, ""
-	} else {
-		return true, token
-	}
-	// ----------------------------------
-	// END authorize
-}
-
-func checkBodyEmpty(writer http.ResponseWriter, req *http.Request) (bool, []byte) {
-	// START checkBodyEmpty
-	// ----------------------------------
-	tmp := make([]byte, CACHE_LEN)
-	if n, _ := req.Body.Read(tmp); n == 0 {
-		writer.WriteHeader(http.StatusBadRequest)
-		writer.Write(EMPTY_REQUEST_MSG)
-		return true, nil
-	} else {
-		return false, tmp[:n]
-	}
-	// ----------------------------------
-	// END checkBodyEmpty
 }
