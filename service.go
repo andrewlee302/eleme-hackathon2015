@@ -205,8 +205,16 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	CartId += 1
-	cartId := CartId
-	CartList[cartId].userId, _ = strconv.Atoi(token)
+	cartId := CartId*nodeNum + selfIndex
+
+	if cartId < UserNum+1 {
+		CartList[cartId].userId, _ = strconv.Atoi(token)
+	} else {
+		var newCart CartWL
+		newCart.userId, _ = strconv.Atoi(token)
+		CartList = append(CartList, newCart)
+	}
+
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cartId) + "\"}"))
 }
@@ -224,7 +232,7 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 	cartIdStr := strings.Split(req.URL.Path, "/")[2]
 	cartId, _ := strconv.Atoi(cartIdStr)
 
-	if cartId > CartId || cartId < 1 {
+	if cartId < 1 {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
@@ -313,7 +321,7 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	cartIdStr := cartIdJson.CartId
 	cartId, _ := strconv.Atoi(cartIdStr)
 
-	if cartId < 1 || cartId > CartId {
+	if cartId < 1 {
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
@@ -341,8 +349,14 @@ func submitOrder(writer http.ResponseWriter, req *http.Request) {
 
 	tmp := ""
 	for i := 0; i < itemNum; i++ {
-		tmp = tmp + strconv.Itoa(CartList[cartId].Items[i].FoodId) + ":" + strconv.Itoa(CartList[cartId].Items[i].Count) + ":"
+		if i > 0 {
+			tmp = tmp + ":" + strconv.Itoa(CartList[cartId].Items[i].FoodId) + ":" + strconv.Itoa(CartList[cartId].Items[i].Count)
+		} else {
+			tmp = tmp + strconv.Itoa(CartList[cartId].Items[i].FoodId) + ":" + strconv.Itoa(CartList[cartId].Items[i].Count)
+		}
 	}
+
+	//fmt.Println(itemNum)
 
 	if itemNum == 0 {
 		flag, _ = redis.Int(LuaSubmitOrder.Do(rs, token, tmp, 0))
@@ -540,7 +554,7 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 		carts[cnt].Items = make([]CartItem, len(foods)/2)
 
 		cntt := 0
-		for j := 0; j < len(foods)-1; j += 2 {
+		for j := 0; j < len(foods); j += 2 {
 			foodId, _ := strconv.Atoi(foods[j])
 			foodCount, _ := strconv.Atoi(foods[j+1])
 			carts[cnt].Items[cntt].FoodId = foodId
