@@ -2,6 +2,7 @@ package main
 
 import (
 	"./redigo/redis"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,13 +28,14 @@ const (
 const (
 	TOTAL_NUM_FIELD = 0
 	ROOT_TOKEN      = "1"
+	// NODE_NUM        = 3
 )
 
 // tuning parameters
 const (
 	CACHE_LEN     = 73
-	POLL_INTERVAL = 100
-	NODE_NUM      = 1
+	POLL_INTERVAL = 100 // ms
+	WAIT_INTERVAL = 3   // s
 )
 
 var (
@@ -55,6 +56,7 @@ var (
 
 	mode bool // true: reverse proxy, false: regular
 
+	nodeNum         int
 	proxies         []*httputil.ReverseProxy
 	orderedHostname []string
 	selfHostname    string
@@ -70,7 +72,7 @@ func getInternalIP() bool {
 	for _, a := range addrs {
 		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
-				selfHostname = ipnet.IP.String()
+				selfHostname = ipnet.IP.String() + ":" + selfport
 				break
 			}
 		}
@@ -79,41 +81,54 @@ func getInternalIP() bool {
 }
 
 func all2allHostname() {
-	rs := Pool.Get()
+
+	fmt.Println("all2allHostname")
 	if ok := getInternalIP(); ok {
+		fmt.Println(selfHostname)
+		rs := Pool.Get()
 		rs.Do("SADD", "hostnames", selfHostname)
 		rs.Do("INCR", "hostcount")
-		t := time.NewTicker(POLL_INTERVAL * time.Millisecond)
-		for {
-			<-t.C
-			count, _ := redis.Int(rs.Do("GET", "hostcount"))
-			if count == NODE_NUM {
-				break
-			}
-		}
-		t.Stop()
-		orderedHostname, _ = redis.Strings(rs.Do("SMEMBERS", "hostnames"))
 		rs.Close()
-		if len(orderedHostname) != NODE_NUM {
+		// t := time.NewTicker(POLL_INTERVAL * time.Millisecond)
+		// for {
+		// 	<-t.C
+		// 	count, _ := redis.Int(rs.Do("GET", "hostcount"))
+		// 	fmt.Println(count)
+		// 	if count == NODE_NUM {
+		// 		break
+		// 	}
+		// }
+		// t.Stop()
+		for i := 0; i < 3; i++ {
+			time.Sleep(WAIT_INTERVAL * time.Second)
+			rs = Pool.Get()
+			nodeNum, _ = redis.Int(rs.Do("GET", "hostcount"))
+			orderedHostname, _ = redis.Strings(rs.Do("SMEMBERS", "hostnames"))
+			rs.Close()
+		}
+		if len(orderedHostname) != nodeNum {
 			log.Fatalln("Unexpected exception")
 		}
+
 		sort.Strings(orderedHostname)
+		log.Printf("nodeNum = %d, hostnames = %v\n", nodeNum, orderedHostname)
 		mode = true
 	} else {
-		// TODO
+		log.Fatalln("failed to get internal net IP")
 	}
 }
 
 func InitReverseProxy() {
 	all2allHostname()
-	proxies := make([]*httputil.ReverseProxy, NODE_NUM)
-	for i := 0; i < NODE_NUM; i++ {
+	proxies = make([]*httputil.ReverseProxy, nodeNum)
+	fmt.Println(orderedHostname)
+	for i := 0; i < nodeNum; i++ {
 		ip := orderedHostname[i]
 		if ip == selfHostname {
 			selfIndex = i
 			proxies[i] = nil
 		} else {
-			remote, _ := url.Parse("http://" + orderedHostname[i] + ":" + os.Getenv("APP_PORT"))
+			remote, _ := url.Parse("http://" + orderedHostname[i])
 			director := func(req *http.Request) {
 				req.URL.Scheme = "http"
 				req.URL.Host = remote.Host
@@ -121,6 +136,7 @@ func InitReverseProxy() {
 			proxies[i] = &httputil.ReverseProxy{Director: director}
 		}
 	}
+	fmt.Println(selfIndex)
 }
 
 func InitService(addr string) {
@@ -156,6 +172,18 @@ func login(writer http.ResponseWriter, req *http.Request) {
 	}
 	token := userIdAndPass.Id
 	userId, _ := strconv.Atoi(token)
+
+	// partition by userId
+	// =================================
+	who := userId % nodeNum
+	if who != selfIndex {
+		reqCopy, _ := http.NewRequest(req.Method, req.URL.String(), bytes.NewReader(body))
+		reqCopy.Header = req.Header
+		proxies[who].ServeHTTP(writer, reqCopy)
+		return
+	}
+	// =================================
+
 	CacheUserLogin[userId] = -1
 	okMsg := []byte("{\"user_id\":" + token + ",\"username\":\"" + user.Username + "\",\"access_token\":\"" + strconv.Itoa(userId+1) + "\"}")
 	writer.WriteHeader(http.StatusOK)
@@ -528,17 +556,6 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 	fmt.Println("queryAllOrders time: ", end.String())
 }
 
-func partitionByToken(userId int, writer http.ResponseWriter, req *http.Request) bool {
-	who := userId % NODE_NUM
-	if who == selfIndex {
-		return true
-	} else {
-		log.Println("transfer to ", who)
-		proxies[who].ServeHTTP(writer, req)
-		return false
-	}
-}
-
 // every action will do authorization except logining
 // return the flag that indicate whether is authroized or not
 func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
@@ -551,9 +568,17 @@ func authorize(writer http.ResponseWriter, req *http.Request) (bool, string) {
 	userId, _ := strconv.Atoi(token)
 	userId -= 1
 
-	if !partitionByToken(userId, writer, req) {
+	// partition by userId
+	// =================================
+	who := userId % nodeNum
+	if who != selfIndex {
+		proxies[who].ServeHTTP(writer, req)
 		return false, ""
 	}
+	// =================================
+	// log.Println(req.Host, req.URL.String())
+
+	// fmt.Println(userId)
 
 	token = strconv.Itoa(userId)
 

@@ -35,7 +35,8 @@ import (
 )
 
 var (
-	Pool *redis.Pool
+	Pool     *redis.Pool
+	selfport string
 )
 
 func main() {
@@ -47,14 +48,14 @@ func main() {
 	// 	fmt.Printf("Set procs %d successfully\n", iWant)
 	// }
 	host := os.Getenv("APP_HOST")
-	port := os.Getenv("APP_PORT")
+	selfport = os.Getenv("APP_PORT")
 	if host == "" {
 		host = "localhost"
 	}
-	if port == "" {
-		port = "8080"
+	if selfport == "" {
+		selfport = "8080"
 	}
-	addr := fmt.Sprintf("%s:%s", host, port)
+	addr := fmt.Sprintf("%s:%s", host, selfport)
 
 	REDIS_HOST := os.Getenv("REDIS_HOST")
 	REDIS_PORT := os.Getenv("REDIS_PORT")
