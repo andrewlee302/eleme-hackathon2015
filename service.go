@@ -281,7 +281,6 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 		newCart.userId = authUserId
 		CartList = append(CartList, newCart)
 	}
-
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("{\"cart_id\": \"" + strconv.Itoa(cartId) + "\"}"))
 }
@@ -336,7 +335,6 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 		writer.Write(CART_NOT_FOUND_MSG)
 		return
 	}
-
 	if CartList[cartId].userId != authUserId {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(NOT_AUTHORIZED_CART_MSG)
@@ -379,11 +377,9 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 			break
 		}
 	}
-
 	if tag {
 		CartList[cartId].Items = append(CartList[cartId].Items, item)
 	}
-
 	writer.WriteHeader(http.StatusNoContent)
 	return
 
