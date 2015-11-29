@@ -28,6 +28,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -40,7 +41,7 @@ var (
 )
 
 func main() {
-	fmt.Println("NumCPU() =", runtime.NumCPU())
+	log.Printf("NumCPU() = %d\n", runtime.NumCPU())
 	// iWant := runtime.NumCPU() * 2
 	// if runtime.GOMAXPROCS(iWant) < 1 {
 	// 	fmt.Printf("Set procs %d failed\n", iWant)
@@ -137,7 +138,7 @@ func loadUsersAndFoods() {
 	FoodList = make([]Food, FoodNum+1)
 
 	// CacheFoodList = make([]Food, FoodNum+1)
-	// UserList = make([]User, UserNum+1)
+	UserList = make([]string, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
 	CacheUserLogin = make([]int, UserNum+1)
 	CartList = make([]CartWL, UserNum+1)
@@ -157,9 +158,7 @@ func loadUsersAndFoods() {
 			panic(err.Error())
 		}
 
-		// UserList[cnt].Id = userId
-		// UserList[cnt].Name = name
-		// UserList[cnt].Password = password
+		UserList[cnt] = name
 
 		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
 		cnt++
@@ -192,7 +191,7 @@ func loadUsersAndFoods() {
 
 		cnt++
 		// rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
-		rs.Do("HSET", "food:"+strconv.Itoa(foodId), "stock", stock)
+		rs.Do("HSETNX", "food:"+strconv.Itoa(foodId), "stock", stock)
 		if foodId > MaxFoodID {
 			MaxFoodID = foodId
 		}
