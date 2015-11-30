@@ -24,7 +24,6 @@ const (
 	ROOT_TOKEN      = "1"
 )
 
-// tuning parameters
 const (
 	CACHE_LEN = 73
 )
