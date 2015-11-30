@@ -47,15 +47,48 @@ var (
 
 func InitService(addr string) {
 	server = http.NewServeMux()
-	server.HandleFunc(LOGIN, login)
-	server.HandleFunc(QUERY_FOOD, queryFood)
-	server.HandleFunc(CREATE_CART, createCart)
-	server.HandleFunc(Add_FOOD, addFood)
-	server.HandleFunc(SUBMIT_OR_QUERY_ORDER, orderProcess)
-	server.HandleFunc(QUERY_ALL_ORDERS, queryAllOrders)
+	server.HandleFunc("/", dispatcher)
+	// server.HandleFunc(LOGIN, login)
+	// server.HandleFunc(QUERY_FOOD, queryFood)
+	// server.HandleFunc(CREATE_CART, createCart)
+	// server.HandleFunc(Add_FOOD, addFood)
+	// server.HandleFunc(SUBMIT_OR_QUERY_ORDER, orderProcess)
+	// server.HandleFunc(QUERY_ALL_ORDERS, queryAllOrders)
 	if err := http.ListenAndServe(addr, server); err != nil {
 		fmt.Println(err)
 	}
+}
+
+func dispatcher(writer http.ResponseWriter, req *http.Request) {
+	switch req.RequestURI[1] {
+	case 'c':
+		{
+			if len(req.RequestURI) > 6 && req.RequestURI[6] == '/' {
+				addFood(writer, req)
+			} else {
+				createCart(writer, req)
+			}
+		}
+	case 'l':
+		{
+			login(writer, req)
+		}
+	case 'f':
+		{
+			queryFood(writer, req)
+		}
+	case 'o':
+		{
+			if req.Method == "POST" {
+				submitOrder(writer, req)
+			} else {
+				queryOneOrder(writer, req)
+			}
+		}
+	case 'a':
+		queryAllOrders(writer, req)
+	}
+
 }
 
 func login(writer http.ResponseWriter, req *http.Request) {
@@ -265,7 +298,7 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func orderProcess(writer http.ResponseWriter, req *http.Request) {
+func submitOrder(writer http.ResponseWriter, req *http.Request) {
 	if req.Method == "POST" {
 		// START authorize
 		// ----------------------------------
@@ -318,6 +351,7 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 			return
 		}
 		cartIdStr := cartIdJson.CartId
+
 		cartId, _ := strconv.Atoi(cartIdStr)
 
 		// copy from the same code above
@@ -333,6 +367,7 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 		rs.Close()
 
 		if flag == 0 {
+
 			writer.WriteHeader(http.StatusOK)
 			writer.Write([]byte("{\"id\": \"" + authUserIdStr + "\"}"))
 			return
@@ -357,8 +392,6 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 			writer.Write(ORDER_OUT_OF_LIMIT_MSG)
 			return
 		}
-	} else {
-		queryOneOrder(writer, req)
 	}
 }
 
@@ -420,7 +453,6 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 				quantity := foodIdAndCounts[i+1]
 				cart.Items[cnt].FoodId = fid
 				cart.Items[cnt].Count = quantity
-				//fmt.Println("FoodList[fid]", fid, FoodList[fid])
 				cart.TotalPrice += quantity * FoodList[fid].Price
 				cnt++
 			}
@@ -428,7 +460,6 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	body, _ := json.Marshal(carts)
-	// fmt.Println(string(body))
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
 }
