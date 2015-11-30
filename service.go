@@ -48,14 +48,36 @@ var (
 
 func InitService(addr string) {
 	server = http.NewServeMux()
-	server.HandleFunc(LOGIN, login)
-	server.HandleFunc(QUERY_FOOD, queryFood)
-	server.HandleFunc(CREATE_CART, createCart)
-	server.HandleFunc(Add_FOOD, addFood)
-	server.HandleFunc(SUBMIT_OR_QUERY_ORDER, orderProcess)
-	server.HandleFunc(QUERY_ALL_ORDERS, queryAllOrders)
+	server.HandleFunc("/", dispacher)
 	if err := http.ListenAndServe(addr, server); err != nil {
 		fmt.Println(err)
+	}
+}
+
+func dispacher(writer http.ResponseWriter, req *http.Request) {
+	switch req.RequestURI[1] {
+	case 'c':
+		{
+			if len(req.RequestURI) > len(CREATE_CART) {
+				addFood(writer, req)
+			} else {
+				createCart(writer, req)
+			}
+		}
+	case 'l':
+		login(writer, req)
+	case 'f':
+		queryFood(writer, req)
+	case 'o':
+		{
+			if req.Method == "POST" {
+				submitOrder(writer, req)
+			} else {
+				queryFood(writer, req)
+			}
+		}
+	case 'a':
+		queryAllOrders(writer, req)
 	}
 }
 
@@ -268,101 +290,97 @@ func addFood(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func orderProcess(writer http.ResponseWriter, req *http.Request) {
-	if req.Method == "POST" {
-		// START authorize
-		// ----------------------------------
-		req.ParseForm()
-		tokenStr := req.Form.Get("access_token")
-		if tokenStr == "" {
-			tokenStr = req.Header.Get("Access-Token")
-		}
+func submitOrder(writer http.ResponseWriter, req *http.Request) {
+	// START authorize
+	// ----------------------------------
+	req.ParseForm()
+	tokenStr := req.Form.Get("access_token")
+	if tokenStr == "" {
+		tokenStr = req.Header.Get("Access-Token")
+	}
 
-		token, _ := strconv.Atoi(tokenStr)
-		authUserId := token - 1
-		authUserIdStr := strconv.Itoa(authUserId)
+	token, _ := strconv.Atoi(tokenStr)
+	authUserId := token - 1
+	authUserIdStr := strconv.Itoa(authUserId)
 
-		if authUserId < 1 || authUserId > MaxUserID {
+	if authUserId < 1 || authUserId > MaxUserID {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(INVALID_ACCESS_TOKEN_MSG)
+		return
+	}
+	rs := Pool.Get()
+	if CacheUserLogin[authUserId] != -1 {
+		if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", authUserIdStr)); !exist {
+			rs.Close()
 			writer.WriteHeader(http.StatusUnauthorized)
 			writer.Write(INVALID_ACCESS_TOKEN_MSG)
 			return
 		}
-		rs := Pool.Get()
-		if CacheUserLogin[authUserId] != -1 {
-			if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", authUserIdStr)); !exist {
-				rs.Close()
-				writer.WriteHeader(http.StatusUnauthorized)
-				writer.Write(INVALID_ACCESS_TOKEN_MSG)
-				return
-			}
-			CacheUserLogin[authUserId] = -1
-		}
-		// ----------------------------------
-		// END authorize
+		CacheUserLogin[authUserId] = -1
+	}
+	// ----------------------------------
+	// END authorize
 
-		// START checkBodyEmpty
-		// ----------------------------------
-		var bodyLen int
-		body := make([]byte, CACHE_LEN)
-		if bodyLen, _ = req.Body.Read(body); bodyLen == 0 {
-			writer.WriteHeader(http.StatusBadRequest)
-			writer.Write(EMPTY_REQUEST_MSG)
-			rs.Close()
-			return
-		}
-		// ----------------------------------
-		// END checkBodyEmpty
-
-		var cartIdJson CartIdJson
-		if err := json.Unmarshal(body[:bodyLen], &cartIdJson); err != nil {
-			rs.Close()
-			writer.WriteHeader(http.StatusBadRequest)
-			writer.Write(MALFORMED_JSON_MSG)
-			return
-		}
-		cartIdStr := cartIdJson.CartId
-
-		cartId, _ := strconv.Atoi(cartIdStr)
-
-		// copy from the same code above
-		//  STASRT CART_NOT_FOUND_MSG
-		if cartId < 1 {
-			rs.Close()
-			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(CART_NOT_FOUND_MSG)
-			return
-		}
-
-		flag, _ := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, authUserIdStr, "cart:"+cartIdStr+":"+authUserIdStr))
+	// START checkBodyEmpty
+	// ----------------------------------
+	var bodyLen int
+	body := make([]byte, CACHE_LEN)
+	if bodyLen, _ = req.Body.Read(body); bodyLen == 0 {
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(EMPTY_REQUEST_MSG)
 		rs.Close()
+		return
+	}
+	// ----------------------------------
+	// END checkBodyEmpty
 
-		if flag == 0 {
-			writer.WriteHeader(http.StatusOK)
-			writer.Write([]byte("{\"id\": \"" + authUserIdStr + "\"}"))
-			return
-		}
-		if flag == 1 {
-			writer.WriteHeader(http.StatusNotFound)
-			writer.Write(CART_NOT_FOUND_MSG)
-			return
-		}
-		if flag == 2 {
-			writer.WriteHeader(http.StatusUnauthorized)
-			writer.Write(NOT_AUTHORIZED_CART_MSG)
-			return
-		}
-		if flag == 3 {
-			writer.WriteHeader(http.StatusForbidden)
-			writer.Write(FOOD_OUT_OF_STOCK_MSG)
-			return
-		}
-		if flag == 4 {
-			writer.WriteHeader(http.StatusForbidden)
-			writer.Write(ORDER_OUT_OF_LIMIT_MSG)
-			return
-		}
-	} else {
-		queryOneOrder(writer, req)
+	var cartIdJson CartIdJson
+	if err := json.Unmarshal(body[:bodyLen], &cartIdJson); err != nil {
+		rs.Close()
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write(MALFORMED_JSON_MSG)
+		return
+	}
+	cartIdStr := cartIdJson.CartId
+
+	cartId, _ := strconv.Atoi(cartIdStr)
+
+	// copy from the same code above
+	//  STASRT CART_NOT_FOUND_MSG
+	if cartId < 1 {
+		rs.Close()
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(CART_NOT_FOUND_MSG)
+		return
+	}
+
+	flag, _ := redis.Int(LuaSubmitOrder.Do(rs, cartIdStr, authUserIdStr, "cart:"+cartIdStr+":"+authUserIdStr))
+	rs.Close()
+
+	if flag == 0 {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte("{\"id\": \"" + authUserIdStr + "\"}"))
+		return
+	}
+	if flag == 1 {
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write(CART_NOT_FOUND_MSG)
+		return
+	}
+	if flag == 2 {
+		writer.WriteHeader(http.StatusUnauthorized)
+		writer.Write(NOT_AUTHORIZED_CART_MSG)
+		return
+	}
+	if flag == 3 {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(FOOD_OUT_OF_STOCK_MSG)
+		return
+	}
+	if flag == 4 {
+		writer.WriteHeader(http.StatusForbidden)
+		writer.Write(ORDER_OUT_OF_LIMIT_MSG)
+		return
 	}
 }
 
@@ -424,7 +442,6 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 				quantity := foodIdAndCounts[i+1]
 				cart.Items[cnt].FoodId = fid
 				cart.Items[cnt].Count = quantity
-				//fmt.Println("FoodList[fid]", fid, FoodList[fid])
 				cart.TotalPrice += quantity * FoodList[fid].Price
 				cnt++
 			}
@@ -432,7 +449,6 @@ func queryOneOrder(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	body, _ := json.Marshal(carts)
-	// fmt.Println(string(body))
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(body)
 }
