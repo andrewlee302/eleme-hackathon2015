@@ -28,35 +28,25 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
-	"runtime"
 	"strconv"
 	"time"
 )
 
 var (
-	Pool     *redis.Pool
-	selfport string
+	Pool *redis.Pool
 )
 
 func main() {
-	log.Printf("NumCPU() = %d\n", runtime.NumCPU())
-	// iWant := runtime.NumCPU() * 2
-	// if runtime.GOMAXPROCS(iWant) < 1 {
-	// 	fmt.Printf("Set procs %d failed\n", iWant)
-	// } else {
-	// 	fmt.Printf("Set procs %d successfully\n", iWant)
-	// }
 	host := os.Getenv("APP_HOST")
-	selfport = os.Getenv("APP_PORT")
+	port := os.Getenv("APP_PORT")
 	if host == "" {
 		host = "localhost"
 	}
-	if selfport == "" {
-		selfport = "8080"
+	if port == "" {
+		port = "8080"
 	}
-	addr := fmt.Sprintf("%s:%s", host, selfport)
+	addr := fmt.Sprintf("%s:%s", host, port)
 
 	REDIS_HOST := os.Getenv("REDIS_HOST")
 	REDIS_PORT := os.Getenv("REDIS_PORT")
@@ -70,17 +60,13 @@ func main() {
 
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
-		MaxIdle:     9000,
+		MaxIdle:     9999,
 		IdleTimeout: 666 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
 			if err != nil {
 				return nil, err
 			}
-			//if _, err := c.Do("AUTH", password); err != nil {
-			//	c.Close()
-			//	return nil, err
-			//}
 			return c, err
 		},
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
@@ -105,12 +91,11 @@ func loadUsersAndFoods() {
 
 	rs := Pool.Get()
 	defer rs.Close()
+	rs.Do("SET", "cart_id", 0)
 
-	// Load LuaScript
-	//LuaAddFood.Load(rs)
+	LuaCreateCart.Load(rs)
+	LuaAddFood.Load(rs)
 	LuaSubmitOrder.Load(rs)
-	// LuaAddFoodWithoutCartId.Load(rs)
-	// LuaSubmitOrderWithoutCartId.Load(rs)
 
 	db, err := sql.Open("mysql", mysql_addr)
 	if err != nil {
@@ -137,12 +122,8 @@ func loadUsersAndFoods() {
 	rows.Close()
 	FoodList = make([]Food, FoodNum+1)
 
-	// CacheFoodList = make([]Food, FoodNum+1)
-	UserList = make([]string, UserNum+1)
 	UserMap = make(map[string]UserIdAndPass)
 	CacheUserLogin = make([]int, UserNum+1)
-	CartList = make([]CartWL, UserNum+1)
-	OrderList = make([]int, UserNum+1)
 
 	rows, err = db.Query("select * from user")
 	if err != nil {
@@ -158,11 +139,9 @@ func loadUsersAndFoods() {
 			panic(err.Error())
 		}
 
-		UserList[cnt] = name
-
 		UserMap[name] = UserIdAndPass{strconv.Itoa(userId), password}
 		cnt++
-		// rs.Do("HMSET", "user:"+name, "id", userId, "password", password)
+
 		if userId > MaxUserID {
 			MaxUserID = userId
 		}
@@ -184,14 +163,10 @@ func loadUsersAndFoods() {
 		FoodList[cnt].Id = foodId
 		FoodList[cnt].Price = price
 		FoodList[cnt].Stock = stock
-
-		// CacheFoodList[cnt].Id = foodId
-		// CacheFoodList[cnt].Price = price
-		// CacheFoodList[cnt].Stock = stock
-
 		cnt++
-		// rs.Do("HMSET", "food:"+strconv.Itoa(foodId), "stock", stock, "price", price)
+
 		rs.Do("HSETNX", "food:"+strconv.Itoa(foodId), "stock", stock)
+
 		if foodId > MaxFoodID {
 			MaxFoodID = foodId
 		}
