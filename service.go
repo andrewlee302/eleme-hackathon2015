@@ -598,35 +598,39 @@ func queryAllOrders(writer http.ResponseWriter, req *http.Request) {
 // every action will do authorization except logining
 // return the flag that indicate whether is authroized or not
 func authorize(writer http.ResponseWriter, req *http.Request, rs redis.Conn) (bool, string) {
+	// START authorize
+	// ----------------------------------
 	req.ParseForm()
-	token := req.Form.Get("access_token")
-	if token == "" {
-		token = req.Header.Get("Access-Token")
+	tokenStr := req.Form.Get("access_token")
+	if tokenStr == "" {
+		tokenStr = req.Header.Get("Access-Token")
 	}
 
-	userId, _ := strconv.Atoi(token)
-	userId -= 1
-	token = strconv.Itoa(userId)
+	token, _ := strconv.Atoi(tokenStr)
+	authUserId := token - 1
+	authUserIdStr := strconv.Itoa(authUserId)
 
-	if userId < 1 || userId > MaxUserID {
+	if authUserId < 1 || authUserId > MaxUserID {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 		return false, ""
 	}
 
-	if CacheUserLogin[userId] == -1 {
-		return true, token
+	if CacheUserLogin[authUserId] == -1 {
+		return true, authUserIdStr
 	}
 
-	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", token)); !exist {
+	if exist, _ := redis.Bool(rs.Do("SISMEMBER", "tokens", authUserIdStr)); !exist {
 		writer.WriteHeader(http.StatusUnauthorized)
 		writer.Write(INVALID_ACCESS_TOKEN_MSG)
 		return false, ""
 	}
 
-	CacheUserLogin[userId] = -1
+	CacheUserLogin[authUserId] = -1
 
-	return true, token
+	return true, authUserIdStr
+	// ----------------------------------
+	// END authorize
 }
 
 func checkBodyEmpty(writer http.ResponseWriter, req *http.Request) (bool, []byte) {
