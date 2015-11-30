@@ -196,7 +196,7 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 	// ----------------------------------
 	// END authorize
 
-	cart_id, _ := redis.Int(LuaCreateCart.Do(rs, "cart:", ":"+authUserIdStr))
+	cart_id, _ := redis.Int(LuaCreateCart.Do(rs, ":"+authUserIdStr))
 	rs.Close()
 
 	writer.WriteHeader(http.StatusOK)

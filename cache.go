@@ -18,9 +18,9 @@ var (
 	CacheUserLogin []int
 )
 
-var LuaCreateCart = redis.NewScript(2, `
+var LuaCreateCart = redis.NewScript(1, `
 	local cartId = redis.call("INCR", "cart_id")
-	redis.call("HSET", KEYS[1] .. cartId .. KEYS[2], "0", 0)
+	redis.call("HSET", "cart:" .. cartId .. KEYS[1], "0", 0)
 	return cartId`)
 
 var LuaAddFood = redis.NewScript(3, `
