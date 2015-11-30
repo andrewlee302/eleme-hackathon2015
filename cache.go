@@ -18,6 +18,11 @@ var (
 	CacheUserLogin []int
 )
 
+var LuaCreateCart = redis.NewScript(2, `
+	local cartId = redis.call("INCR", "cart_id")
+	redis.call("HSET", KEYS[1] .. cartId .. KEYS[2], "0", 0)
+	return cartId`)
+
 var LuaAddFood = redis.NewScript(3, `
 		if not redis.call("HGET", KEYS[3] , '0') then
 			if KEYS[1] - redis.call('GET', 'cart_id') > 0 then

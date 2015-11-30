@@ -93,6 +93,7 @@ func loadUsersAndFoods() {
 	defer rs.Close()
 	rs.Do("SET", "cart_id", 0)
 
+	LuaCreateCart.Load(rs)
 	LuaAddFood.Load(rs)
 	LuaSubmitOrder.Load(rs)
 

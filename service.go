@@ -163,9 +163,7 @@ func createCart(writer http.ResponseWriter, req *http.Request) {
 	// ----------------------------------
 	// END authorize
 
-	cart_id, _ := redis.Int(rs.Do("INCR", "cart_id"))
-
-	rs.Do("HSET", "cart:"+strconv.Itoa(cart_id)+":"+authUserIdStr, TOTAL_NUM_FIELD, 0)
+	cart_id, _ := redis.Int(LuaCreateCart.Do(rs, "cart:", ":"+authUserIdStr))
 	rs.Close()
 
 	writer.WriteHeader(http.StatusOK)
@@ -320,7 +318,6 @@ func orderProcess(writer http.ResponseWriter, req *http.Request) {
 			return
 		}
 		cartIdStr := cartIdJson.CartId
-
 		cartId, _ := strconv.Atoi(cartIdStr)
 
 		// copy from the same code above
